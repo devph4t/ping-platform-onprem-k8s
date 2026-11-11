@@ -101,6 +101,22 @@ else
   log "realm alpha created"
 fi
 
+# --- 2b. root realm DNS aliases for in-cluster AM host names --------------------
+# AM picks the realm from the request host; without these, in-cluster calls (IDM → AM
+# introspect) fail with 500 "No mapping organization found for organization identifier".
+step "2b. Root realm aliases (in-cluster host names)"
+root="$(am GET '/global-config/realms?_queryFilter=true' | jq '.result[] | select(.name == "/")')"
+want="$(jq -n --arg ns "$NAMESPACE" '["am", "am.\($ns)", "am.\($ns).svc", "am.\($ns).svc.cluster.local"]')"
+if echo "$root" | jq -e --argjson w "$want" '(.aliases - (.aliases - $w)) | length == ($w | length)' >/dev/null; then
+  log "root realm aliases already set"
+else
+  echo "$root" | jq --argjson w "$want" '{name, active, parentPath, aliases: ((.aliases + $w) | unique)}' > /tmp/realm.json
+  AM_EXTRA_HEADERS=(-H "If-Match: *")   # without it: HTTP 500, empty body
+  am PUT "/global-config/realms/$(echo "$root" | jq -r '._id')" < /tmp/realm.json >/dev/null
+  AM_EXTRA_HEADERS=(); rm -f /tmp/realm.json
+  log "root realm aliases + $(echo "$want" | jq -c .)"
+fi
+
 # --- 3. OAuth2 provider -------------------------------------------------------
 step "3. OAuth2 provider"
 for realm in root alpha; do
@@ -122,11 +138,16 @@ done
 
 # --- 4. OAuth2 clients --------------------------------------------------------
 step "4. OAuth2 clients"
+# PUT replaces whole sections, so start from AM's client template (all defaults, e.g.
+# responseTypes) and deep-merge our settings over it — otherwise defaults are wiped
+# (seen: "Client does not support this response type").
 for f in "$CONFIG_DIR"/am/clients/*.json; do
   id="$(basename "$f" .json)"
   body="$(render "$f")"
   for realm in $(echo "$body" | jq -r '._realms[]'); do
-    echo "$body" | jq 'del(._realms, ._comment)' \
+    tpl="$(echo '{}' | am POST "$(realm_path "$realm")/realm-config/agents/OAuth2Client?_action=template")"
+    jq -n --argjson t "$tpl" --argjson b "$(echo "$body" | jq 'del(._realms, ._comment)')" \
+        '($t | del(._id, ._rev, ._type)) * $b' \
       | am PUT "$(realm_path "$realm")/realm-config/agents/OAuth2Client/$id" >/dev/null
     log "$realm: client $id upserted"
   done
@@ -193,8 +214,27 @@ am GET "$p" | jq --arg s "https://${FQDN}/enduser/?realm=alpha" '
   | am PUT "$p" >/dev/null
 log "alpha: default journey PlatformLogin, success URL https://${FQDN}/enduser/?realm=alpha"
 
+# --- 8a. FQDN map: accept in-cluster host names --------------------------------
+# IDM calls http://am.<ns>.svc.cluster.local:8080/am/oauth2/introspect; AM rejects unknown
+# hosts with 400 'FQDN "am.ping.svc.cluster.local" is not valid' unless they are mapped.
+step "8a. FQDN map (in-cluster AM host names)"
+p=/global-config/servers/server-default/properties/advanced
+cur="$(am GET "$p")"
+want="$(jq -n --arg ns "$NAMESPACE" '[ "am", "am.\($ns)", "am.\($ns).svc", "am.\($ns).svc.cluster.local" ]
+         | map({ key: "com.sun.identity.server.fqdnMap[\(.)]", value: . }) | from_entries')"
+if echo "$cur" | jq -e --argjson w "$want" '. as $c | $w | to_entries | all(.value == $c[.key])' >/dev/null; then
+  log "fqdnMap already set"
+else
+  echo "$cur" | jq --argjson w "$want" 'del(._id, ._rev) + $w' > /tmp/adv.json
+  AM_EXTRA_HEADERS=(-H "If-Match: *")
+  am PUT "$p" < /tmp/adv.json >/dev/null
+  AM_EXTRA_HEADERS=(); rm -f /tmp/adv.json
+  log "fqdnMap: $(echo "$want" | jq -c 'keys')"
+  echo "AM_RESTART_REQUIRED"
+fi
+
 # --- 8. External CTS ----------------------------------------------------------
-step "8. External CTS"
+step "8b. External CTS"
 p=/global-config/servers/server-default/properties/cts
 cur="$(am GET "$p")"
 if [ "$(echo "$cur" | jq -r '."amconfig.org.forgerock.services.cts.store.common.section"."org.forgerock.services.cts.store.location"')" = external ]; then

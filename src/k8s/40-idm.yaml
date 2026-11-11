@@ -43,18 +43,22 @@ spec:
               valueFrom: { secretKeyRef: { name: platform-secrets, key: DS_ROOT_PASSWORD } }
             - name: IDM_PROP_openidm_admin_password
               valueFrom: { secretKeyRef: { name: platform-secrets, key: IDM_ADMIN_PASSWORD } }
+            # platform: AM token introspection (rsFilter) + URLs for the admin UI
+            - name: IDM_PROP_rs_client_secret
+              valueFrom: { secretKeyRef: { name: platform-secrets, key: IDM_RS_CLIENT_SECRET } }
+            - { name: IDM_PROP_am_introspect_url, value: "http://am.${NAMESPACE}.svc.cluster.local:8080/am/oauth2/introspect" }
+            - { name: IDM_PROP_am_public_url, value: "https://${FQDN}/am" }
+            - { name: IDM_PROP_openidm_host, value: "${FQDN}" }
             # pods are transient: drop cluster node state on shutdown
             - { name: IDM_PROP_openidm_cluster_remove_offline_node_state, value: "true" }
           ports:
             - { name: http, containerPort: 8080 }
           startupProbe:
+            # no auth headers: with the platform rsFilter, X-OpenIDM-Username/Password → 401;
+            # anonymous (no headers) maps to openidm-reg, which may read info/ping
             httpGet: &ping
               path: /openidm/info/ping
               port: http
-              httpHeaders:
-                - { name: X-OpenIDM-Username, value: anonymous }
-                - { name: X-OpenIDM-Password, value: anonymous }
-                - { name: X-OpenIDM-NoSession, value: "true" }
             periodSeconds: 5
             failureThreshold: 60
           readinessProbe:

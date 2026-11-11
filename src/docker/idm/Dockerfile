@@ -21,6 +21,10 @@ RUN f=/opt/openidm/conf/repo.ds.json \
       "$f" \
  && grep -q 'openidm.repo.host' "$f" && grep -q 'openidm.repo.port' "$f" \
  && grep -q 'openidm.repo.binddn' "$f" && grep -q 'openidm.repo.password' "$f"
+# Platform integration (shared identity store, rsFilter, platformSettings) — see platform/patch-conf.sh
+RUN apk add --no-cache jq
+COPY platform /tmp/platform
+RUN sh /tmp/platform/patch-conf.sh
 
 # --- runtime -----------------------------------------------------------------
 FROM eclipse-temurin:21-jre

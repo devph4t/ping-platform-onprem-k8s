@@ -4,8 +4,10 @@
 #   2. namespace + Secrets (from .env / .secrets — never written to disk as YAML)
 #   3. render src/k8s/*.yaml → .rendered/k8s/ and apply in order, waiting for each
 #
+#   4. run the platform-config Job (AM install + platform settings); restart AM if it asks
+#
 # Usage: bash src/scripts/deploy.sh [--skip-wait]
-# Prereqs (once): build-images.sh, ds-deployment-id.sh, tls.sh
+# Prereqs (once): build-images.sh, ds-deployment-id.sh, tls.sh   — then: verify.sh
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 load_env
@@ -19,7 +21,7 @@ OUT="$RENDER_DIR/k8s"
 info "Checks"
 kc get nodes >/dev/null 2>&1 || die "cluster '$KUBE_CONTEXT' not reachable"
 node_images="$(docker exec "$KIND_NODE_CONTAINER" ctr -n k8s.io images ls -q 2>/dev/null || true)"
-for img in "$IMAGE_DS" "$IMAGE_AM" "$IMAGE_IDM" "$IMAGE_UI"; do
+for img in "$IMAGE_DS" "$IMAGE_AM" "$IMAGE_IDM" "$IMAGE_UI" "$IMAGE_CONFIG"; do
   grep -qx "docker.io/$img" <<<"$node_images" || die "image $img not in cluster — run: bash src/scripts/build-images.sh"
 done
 ok "images present in node"
@@ -81,6 +83,29 @@ for f in 20-ds.yaml 30-am.yaml 40-idm.yaml 50-platform-ui.yaml 60-gateway.yaml; 
   # shellcheck disable=SC2086
   wait_for ${WAITS[$f]}
 done
+
+# --- 4. platform configuration Job ------------------------------------------
+info "Platform configuration Job"
+render "$K8S_DIR/70-platform-config-job.yaml" "$OUT/70-platform-config-job.yaml"
+kn delete job platform-config --ignore-not-found --wait=true >/dev/null
+kn apply -f "$OUT/70-platform-config-job.yaml"
+t0=$SECONDS; status=""
+for i in $(seq 1 180); do   # up to 15 min (first run installs AM)
+  s="$(kn get job platform-config -o jsonpath='{.status.succeeded}/{.status.failed}')"
+  [ "${s%%/*}" = 1 ] && { status=ok; break; }
+  [ -n "${s##*/}" ] && [ "${s##*/}" -ge 1 ] && { status=failed; break; }
+  sleep 5
+done
+kn logs job/platform-config > "$RENDER_DIR/platform-config.log" 2>&1 || true
+grep -E '^\[..:..:..\] ===|ERROR|HTTP [0-9]{3}' "$RENDER_DIR/platform-config.log" | sed 's/^/     /'
+[ "$status" = ok ] || die "platform-config Job $status${status:+ }after $((SECONDS - t0))s — full log: .rendered/platform-config.log"
+ok "platform-config Job succeeded ($((SECONDS - t0))s)"
+log "[CONFIG] deploy.sh: platform-config Job succeeded in $((SECONDS - t0))s"
+if grep -q AM_RESTART_REQUIRED "$RENDER_DIR/platform-config.log"; then
+  info "Restarting AM (server-level settings changed: CTS / fqdnMap)"
+  kn rollout restart statefulset/am >/dev/null
+  wait_for statefulset/am 600s
+fi
 
 echo
 kn get pods,svc -o wide
