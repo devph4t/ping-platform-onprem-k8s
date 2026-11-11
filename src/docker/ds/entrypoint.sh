@@ -12,7 +12,7 @@
 # Required env (first boot): DS_ROOT_PASSWORD, DS_DEPLOYMENT_ID_PASSWORD,
 #   AM_CONFIG_ADMIN_PASSWORD, AM_CTS_ADMIN_PASSWORD, AM_IDENTITY_STORE_ADMIN_PASSWORD
 # Optional: DS_HOSTNAME (default: hostname -f), DS_SERVER_ID (default: hostname -s),
-#   DS_ROOT_DN (uid=admin), DS_IDM_REPO_DOMAIN (example.com), DS_CTS_EXPIRATION (am-sessions-only)
+#   DS_ROOT_DN (uid=admin), DS_IDM_REPO_DOMAIN (forgerock.com — what IDM repo.ds.json expects), DS_CTS_EXPIRATION (am-sessions-only)
 
 set -euo pipefail
 
@@ -82,7 +82,7 @@ do_setup() {
     --profile am-identity-store \
     --set "am-identity-store/amIdentityStoreAdminPassword:$AM_IDENTITY_STORE_ADMIN_PASSWORD" \
     --profile idm-repo \
-    --set "idm-repo/domain:${DS_IDM_REPO_DOMAIN:-example.com}" \
+    --set "idm-repo/domain:${DS_IDM_REPO_DOMAIN:-forgerock.com}" \
     --acceptLicense \
     --quiet
 
