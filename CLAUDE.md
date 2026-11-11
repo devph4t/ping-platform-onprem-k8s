@@ -112,6 +112,7 @@ Single namespace `${NAMESPACE}` (default `ping`), single replica of each compone
 | Host | Windows 11, Docker Desktop 29.7.2 (20 CPU, ~11.6 GB RAM to Docker), WSL Ubuntu-26.04, Git Bash. kubectl present; **helm/kind/minikube not installed**. Git Bash has perl, openssl, envsubst, GnuWin32 make. |
 | Cluster | Docker Desktop Kubernetes **enabled**: context `docker-desktop`, kind-based node `desktop-control-plane` (k8s v1.36.1, containerd 2.3.1), default StorageClass `standard` (local-path). |
 | Images → cluster | Kind node does **not** share Docker's image store (`ErrImageNeverPull`). Load with `docker save IMG \| docker exec -i desktop-control-plane ctr -n k8s.io images import --digests -` (node container is hidden from `docker ps`, exec still works). Implemented as `load_image` in `src/scripts/lib.sh`; pods use `imagePullPolicy: Never`. |
+| WSL | Ubuntu-26.04 with Docker Desktop WSL integration ON: integration provides `docker`, `kubectl` v1.36.1 and `~/.kube/config` (context docker-desktop). k8s API `https://127.0.0.1:50478` reachable from WSL even in NAT mode. `make` installed via apt. |
 
 ### Scripts (bash only — run in **WSL Ubuntu-26.04** from project root `/mnt/d/source_code/work/p1aic/on-premise`)
 
