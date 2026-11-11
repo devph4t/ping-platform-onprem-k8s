@@ -64,7 +64,7 @@ on-premise/
 │   │   ├─ 20-ds.yaml         #   StatefulSet + headless Service + PVC
 │   │   ├─ 30-am.yaml         #   StatefulSet (PVC for AM config dir) + Service
 │   │   ├─ 40-idm.yaml        #   Deployment + Service
-│   │   ├─ 50-platform-ui.yaml#   Deployments (admin/enduser/login) + Services
+│   │   ├─ 50-platform-ui.yaml#   ONE Deployment + Service serving /platform /enduser /login
 │   │   ├─ 60-ingress.yaml    #   single host ${FQDN}, path routing, TLS
 │   │   └─ jobs/              #   am-install, platform-config (OAuth2 clients, IDM link)
 │   ├─ config/                # REST payloads used by jobs (AM realms/clients/services)
@@ -87,9 +87,9 @@ on-premise/
 browser ──https://${FQDN}──► ingress-nginx (TLS: self-signed CA)
    /am/*                      → am:8080        (Tomcat, AM 8.1.1)
    /openidm/* /upload /export → idm:8080       (IDM 8.1.2)
-   /platform/*                → admin-ui:8080  (Platform UI)
-   /enduser/*                 → enduser-ui:8080
-   /login/*                   → login-ui:8080
+   /platform/*                → platform-ui:8080  (one nginx serves all three apps)
+   /enduser/*                 → platform-ui:8080
+   /login/*                   → platform-ui:8080
    /                          → redirect /platform
 
 am  ──LDAP 1389──► ds-0  (profiles: am-config, am-cts, am-identity-store, idm-repo)
@@ -115,7 +115,9 @@ Single namespace `${NAMESPACE}` (default `ping`), single replica of each compone
 | AM image | `ping-local/am:8.1.1` (tomcat:10.1-jdk21-temurin, exploded war at `/am`, RemoteIpValve for X-Forwarded-*, uid 11111). Volume `/home/forgerock` holds `openam/` + `.openamcfg/` (bootstrap) — recreated container starts configured in ~15 s. Entrypoint builds truststore = JDK cacerts + `/var/run/secrets/trusted-ca/*.pem`. ~550 MiB idle, ~1 GiB after config. |
 | IDM 8.1.2 | Ships `bin/Custom.Dockerfile` (base `gcr.io/forgerock-io/java-21`, user 11111, port 8080) and `bin/docker-entrypoint.sh`. `conf/repo.ds.json` = external DS, **base `dc=openidm,dc=forgerock,dc=com`** (so DS `idm-repo/domain` = `forgerock.com`), startTLS, truststore `security/truststore` (JKS, pass in `security/storepass`). CORS filter class `org.eclipse.jetty.ee10.servlets.CrossOriginFilter`. Props in `resolver/boot.properties`. |
 | IDM image | `ping-local/idm:8.1.2` (temurin:21-jre + fonts-dejavu + tini, uid 11111). Build patches `repo.ds.json` → `&{openidm.repo.host\|localhost}`, `&{openidm.repo.port\|1389}`, `&{openidm.repo.binddn\|uid=admin}`, `&{openidm.repo.password}`. Entrypoint imports `/var/run/secrets/trusted-ca/*.pem` into IDM truststore and writes env `IDM_PROP_a_b_c=v` → `a.b.c=v` in boot.properties, then runs vendor entrypoint. Ready ~18 s, ~850 MiB. Verified: managed user create/query stored at `ou=user,ou=managed,dc=openidm,dc=forgerock,dc=com`. |
-| Platform UI 8.1.2 | `PlatformUI/www/{platform,enduser,login}` static apps + `variable_replacement.sh` (envsubst of `AM_URL`, `AM_ADMIN_URL`, `IDM_REST_URL`, `IDM_ADMIN_URL`, `ENDUSER_UI_URL`, `PLATFORM_ADMIN_URL`, `ADMIN_CLIENT_ID`, `ENDUSER_CLIENT_ID`, …). Needs `envsubst` in image. |
+| Platform UI 8.1.2 | `PlatformUI/www/{platform,enduser,login}` static SPAs (relative asset paths) + `variable_replacement.sh` (envsubst of `$AM_URL` etc. in `*/js/*.js`, keeps pristine copies in `/tmp/*.tmpl`). 691 JS files. |
+| UI image | `ping-local/platform-ui:8.1.2.0813` (nginx-unprivileged 1.29-alpine, uid 101, port 8080, `.map` files dropped, 265 MB). Entrypoint derives all URLs from `FQDN` (`/am`, `/am/ui-admin`, `/openidm`, `/admin`, `/upload`, `/export`, `/enduser`, `/platform`), cloud-only `ENABLE_*` = false. nginx: SPA fallback per app, `/healthz`, `absolute_redirect off` (else redirects leak `http://…:8080`). **Design change:** one UI Deployment for all three apps (was three). ~19 MiB. |
+| Build | `bash src/scripts/build-images.sh` → all 4 images built (cached) + loaded into kind node in ~50 s. |
 | Host | Windows 11, Docker Desktop 29.7.2 (20 CPU, ~11.6 GB RAM to Docker), WSL Ubuntu-26.04, Git Bash. kubectl present; **helm/kind/minikube not installed**. Git Bash has perl, openssl, envsubst, GnuWin32 make. |
 | Cluster | Docker Desktop Kubernetes **enabled**: context `docker-desktop`, kind-based node `desktop-control-plane` (k8s v1.36.1, containerd 2.3.1), default StorageClass `standard` (local-path). |
 | Images → cluster | Kind node does **not** share Docker's image store (`ErrImageNeverPull`). Load with `docker save IMG \| docker exec -i desktop-control-plane ctr -n k8s.io images import --digests -` (node container is hidden from `docker ps`, exec still works). Implemented as `load_image` in `src/scripts/lib.sh`; pods use `imagePullPolicy: Never`. |
