@@ -1,5 +1,8 @@
 # Troubleshooting
 
+**On another PC, or when asking for help:** run `make diag` and share the summary or the
+`.rendered/diag-*.txt` file (it contains no secrets).
+
 Start with these three commands. They locate most problems:
 
 ```bash
@@ -55,6 +58,26 @@ Every entry below is something that actually happened while building this projec
 
 - **Reproduced:** with `HTTPS_PROXY=http://10.255.255.1:3128`, the old curl call returns
   exactly `000`. With `--noproxy`, `verify` passes.
+
+### Browser shows **504 Gateway Time-out** (nginx), but all pods are Running
+
+- **What it means:** the browser reached **our** gateway, but the gateway didn't get an
+  answer from the pod behind it in time. "Not secure" next to the URL only means the local
+  CA isn't trusted yet (`make trust`).
+- **Diagnose:** run `make diag`. It tests the exact in-cluster paths **from inside the
+  gateway pod** (platform-ui, am, idm, cluster DNS), lists Services without ready
+  endpoints, and shows the gateway's upstream errors. The full report goes to
+  `.rendered/diag-*.txt`, with no secrets.
+- **Typical causes and fixes:**
+  - A Service has **no ready endpoint**: its pod isn't ready (slow start or failing probe).
+    Check with `make status` and `make logs-<component>`, then `make restart-<component>`.
+  - **Probe timeouts on a slower laptop:** "Readiness probe failed … context deadline
+    exceeded". Fixed: probes now allow 5 s (default was 1 s). Run `git pull && make deploy`.
+  - **gateway pod → service fails but DNS works:** in-cluster networking is broken.
+    Restart Docker Desktop. If it persists, check whether endpoint-security or VPN
+    software interferes with Docker Desktop networking.
+- `platform-config … 0/1 Completed` is **not** a problem: it's a one-time Job, and
+  Completed means it succeeded.
 
 ### Browser shows **404** for `https://ping-local.test.bbl` (no certificate warning)
 

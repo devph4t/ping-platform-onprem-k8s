@@ -35,6 +35,7 @@ data:
         proxy_buffers             8 64k;
         proxy_busy_buffers_size   128k;
         proxy_read_timeout        300s;
+        proxy_connect_timeout     10s;   # dead upstream → fast 504 + "upstream timed out" in the log
         proxy_http_version        1.1;
 
         proxy_set_header Host              $host;
@@ -87,6 +88,7 @@ spec:
           readinessProbe:
             httpGet: { path: /healthz, port: http }
             periodSeconds: 10
+            timeoutSeconds: 5      # default 1 s is too short on slower laptops (AM probe timed out)
           resources:
             requests: { cpu: 50m, memory: 32Mi }
             limits:   { memory: 128Mi }

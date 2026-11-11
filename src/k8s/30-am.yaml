@@ -43,13 +43,16 @@ spec:
           startupProbe:
             tcpSocket: { port: http }
             periodSeconds: 5
+            timeoutSeconds: 5      # default 1 s is too short on slower laptops (AM probe timed out)
             failureThreshold: 60
           readinessProbe:
             httpGet: { path: /am/isAlive.jsp, port: http }
             periodSeconds: 10
+            timeoutSeconds: 5      # default 1 s is too short on slower laptops (AM probe timed out)
           livenessProbe:
             tcpSocket: { port: http }
             periodSeconds: 30
+            timeoutSeconds: 5      # default 1 s is too short on slower laptops (AM probe timed out)
           resources:
             requests: { cpu: 250m, memory: "${AM_MEMORY}" }
             limits:   { memory: "${AM_MEMORY}" }

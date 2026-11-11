@@ -39,6 +39,7 @@ spec:
           readinessProbe:
             httpGet: { path: /healthz, port: http }
             periodSeconds: 10
+            timeoutSeconds: 5      # default 1 s is too short on slower laptops (AM probe timed out)
           resources:
             requests: { cpu: 50m, memory: "${UI_MEMORY}" }
             limits:   { memory: "${UI_MEMORY}" }

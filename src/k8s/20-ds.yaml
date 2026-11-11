@@ -63,13 +63,16 @@ spec:
           startupProbe:               # first boot runs setup (~15 s)
             httpGet: { path: /alive, port: http }
             periodSeconds: 5
+            timeoutSeconds: 5      # default 1 s is too short on slower laptops (AM probe timed out)
             failureThreshold: 60
           livenessProbe:
             httpGet: { path: /alive, port: http }
             periodSeconds: 30
+            timeoutSeconds: 5      # default 1 s is too short on slower laptops (AM probe timed out)
           readinessProbe:
             httpGet: { path: /healthy, port: http }
             periodSeconds: 10
+            timeoutSeconds: 5      # default 1 s is too short on slower laptops (AM probe timed out)
           resources:
             requests: { cpu: 250m, memory: "${DS_MEMORY}" }
             limits:   { memory: "${DS_MEMORY}" }

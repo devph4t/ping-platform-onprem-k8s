@@ -117,6 +117,7 @@ and all users gone.
 | Script | Purpose |
 | --- | --- |
 | `preflight.sh` | Is the machine ready? (tools, RAM, cluster, zips, hosts entry, proxy variables) |
+| `make diag` (`diag.sh`) | Support bundle: pods, events, endpoints, logs, in-cluster checks from the gateway pod, connectivity → `.rendered/diag-*.txt` (no secrets; safe to share) |
 | `make check-gateway` | Why can't I reach `https://ping-local.test.bbl`? Proxy → DNS → TCP 443 → TLS → Windows browser path (proxy setting, CA trust, who answers) |
 | `setup-wsl.sh` | One-time WSL setup |
 | `init-env.sh [--force]` | Create `.env` with random secrets |
