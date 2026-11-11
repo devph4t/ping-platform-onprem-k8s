@@ -6,7 +6,7 @@ progress/
 .env
 .env.bak.*
 *.env.local
-src/scripts/.secrets/
+.secrets/
 *.pem
 *.key
 *.crt

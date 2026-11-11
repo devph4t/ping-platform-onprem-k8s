@@ -11,6 +11,7 @@ ROOT_DIR="$(cd "$SRC_DIR/.." && pwd)"
 APPS_DIR="$ROOT_DIR/assets/apps"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env}"
 RENDER_DIR="$ROOT_DIR/.rendered"
+SECRETS_DIR="$ROOT_DIR/.secrets"      # generated keys/certs (git-ignored)
 
 # Shared toolbox (activity log). Override with TOOLS_BIN if it lives elsewhere.
 if [ -z "${TOOLS_BIN:-}" ]; then
@@ -48,6 +49,9 @@ load_env() {
   if grep -q '=CHANGE_ME$' <(tr -d '\r' < "$ENV_FILE"); then
     die ".env still has CHANGE_ME values. Run: bash src/scripts/init-env.sh"
   fi
+  # In-cluster DS host name. AM/IDM must use exactly this name: the DS TLS cert is
+  # issued for it (setup --hostname).
+  export DS_HOST="${DS_HOST:-ds-0.ds.$NAMESPACE.svc.cluster.local}"
   export IMAGE_DS="$IMAGE_PREFIX/ds:$DS_VERSION"
   export IMAGE_AM="$IMAGE_PREFIX/am:$AM_VERSION"
   export IMAGE_IDM="$IMAGE_PREFIX/idm:$IDM_VERSION"
