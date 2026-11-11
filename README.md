@@ -13,17 +13,32 @@ platform configuration are fully automated, with no clicks in any admin console.
 | Platform UI | 8.1.2 | Admin console `/platform`, end-user portal `/enduser`, login UI `/login` |
 | Gateway | nginx 1.29 | HTTPS for `https://ping-local.test.bbl`, path routing |
 
+```mermaid
+flowchart LR
+  b["Browser"] -- "HTTPS ping-local.test.bbl" --> gw["gateway"]
+  gw --> ui["Platform UI"]
+  gw --> am["PingAM"]
+  gw --> idm["PingIDM"]
+  am --> ds[("PingDS")]
+  idm --> ds
+  idm <-. "tokens" .-> am
+```
+
 ## Quick start
 
 Run these in WSL (Ubuntu) from the project root, after the [one-time setup](docs/setup.md):
 
 ```bash
 cd /mnt/d/source_code/work/p1aic/on-premise
-bash src/scripts/preflight.sh          # machine ready?
-bash src/scripts/build-images.sh       # build 5 images from the zips (~1 min)
-bash src/scripts/deploy.sh             # deploy + configure everything (~2-3 min)
-bash src/scripts/verify.sh             # 17 end-to-end checks
+make preflight     # machine ready?
+make build         # build 5 images from the zips (~1 min)
+make deploy        # deploy + configure everything (~2-3 min)
+make verify        # 17 end-to-end checks
+make help          # all targets: setup, status, logs-am, restart-idm, down, reset, lint, ...
 ```
+
+Every `make` target is a thin wrapper around a script in `src/scripts/`, so
+`bash src/scripts/deploy.sh` is the same as `make deploy`.
 
 Then open:
 
@@ -39,6 +54,7 @@ IDM 8.1 ships no native admin UI. IDM is managed through the Platform admin cons
 
 | Doc | Read it when you want to… |
 | --- | --- |
+| [docs/dependencies.md](docs/dependencies.md) | check what you need: host software and versions, zips, images, network, ports |
 | [docs/setup.md](docs/setup.md) | prepare a machine (Docker Desktop, Kubernetes, WSL, hosts, certificates) |
 | [docs/running.md](docs/running.md) | build, deploy, verify, tear down; what each script does |
 | [docs/daily-operations.md](docs/daily-operations.md) | start/stop, check status, read logs, find passwords, manage users, apply changes |
@@ -54,6 +70,7 @@ src/docker/         one Dockerfile per image: ds, am, idm, platform-ui, platform
 src/k8s/            Kubernetes manifest templates (${VAR} filled from .env)
 src/config/         platform configuration Job: configure.sh + AM payloads
 src/scripts/        everything you run: preflight, build, deploy, verify, teardown, ...
+Makefile            short names for the scripts (`make help`)
 docs/               documentation
 .env                your settings and secrets (git-ignored; created by init-env.sh)
 .secrets/           generated certificates (git-ignored)

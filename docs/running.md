@@ -13,6 +13,24 @@ bash src/scripts/verify.sh         # 3. end-to-end test
 
 Every step is safe to re-run.
 
+```mermaid
+flowchart LR
+  zips[/"assets/apps/*.zip"/] --> build["make build<br/>build-images.sh"]
+  build --> node[("kind node<br/>image store")]
+  envs[/".env + .secrets/"/] --> deploy
+  node --> deploy["make deploy<br/>deploy.sh"]
+  deploy --> ns[("namespace ping")]
+  deploy --> verify["make verify<br/>verify.sh"]
+  subgraph steps["deploy.sh, in order"]
+    direction TB
+    d1["checks"] --> d2["namespace + Secrets"] --> d3["ds → am → idm → ui → gateway<br/>(each waits until ready)"] --> d4["platform-config Job"] --> d5["restart AM if asked"]
+  end
+  deploy -.-> steps
+```
+
+The same steps are available as `make` targets (`make help`). `make up` runs build,
+deploy and verify.
+
 ## 1. `build-images.sh` — build the images
 
 ```bash

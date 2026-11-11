@@ -4,12 +4,25 @@ Do these steps once per machine. Afterwards, `bash src/scripts/preflight.sh` sho
 `preflight passed`.
 
 Tested on Windows 11 with Docker Desktop 29.7 (Kubernetes v1.36) and WSL Ubuntu 26.04.
+Exact versions are in [dependencies.md](dependencies.md).
+
+```mermaid
+flowchart LR
+  a["1-2 · Docker Desktop<br/>+ Kubernetes"] --> b["3 · WSL integration<br/>make setup-wsl"]
+  b --> c["4 · vendor zips<br/>assets/apps/"]
+  c --> d["5 · make env"]
+  d --> e["6 · make hosts"]
+  e --> f["7 · make build-ds ds-id<br/>make certs trust"]
+  f --> g["8 · make preflight"]
+```
+
+With the zips in place, `make setup` runs steps 3 and 5–8 in one go.
 
 ## 1. Hardware
 
 - **RAM:** give Docker at least **10 GiB** (Docker Desktop → Settings → Resources). The
   platform uses about 3.5–5 GiB once running. Builds and first start need headroom.
-- **Disk:** about 10 GB for the images and volumes.
+- **Disk:** about 15 GB free (images are stored twice: in Docker and in the Kubernetes node). See [dependencies.md](dependencies.md).
 
 ## 2. Docker Desktop with Kubernetes
 

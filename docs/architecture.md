@@ -2,29 +2,44 @@
 
 ## Overview
 
-```text
-                         Windows browser / WSL curl
-                                   │  https://ping-local.test.bbl   (hosts → 127.0.0.1)
-                                   ▼
- Docker Desktop ── publishes LoadBalancer :443/:80 on localhost
- ┌──────────────────────────── Kubernetes namespace "ping" ───────────────────────────┐
- │                                                                                    │
- │   gateway (nginx)  TLS: .secrets/gateway.crt (local CA)                            │
- │     /am/*                         ─► am:8080           (Tomcat 10.1, AM 8.1.1)      │
- │     /openidm/* /admin/* /upload/* /export/*  ─► idm:8080   (IDM 8.1.2)              │
- │     /platform/* /enduser/* /login/* /  ─► platform-ui:8080  (nginx, Platform UI)    │
- │                                                                                    │
- │   am ──LDAPS 1636──► ds-0  ◄──StartTLS 1389── idm                                   │
- │    │  config  ou=am-config        (cfgStore)                                       │
- │    │  sessions ou=tokens           (amCts)          one DS, four backends,          │
- │    │  users   ou=identities        (amIdentityStore) TLS from the DS deployment CA │
- │    │          dc=openidm,dc=forgerock,dc=com (idmRepo)                              │
- │    │                                                                               │
- │    ├─► idm  (IDM Provisioning service, journeys: client idm-provisioning)          │
- │    ◄── idm  (token introspection: client idm-resource-server)                      │
- │                                                                                    │
- │   platform-config Job (runs once per deploy): installs + configures AM via REST     │
- └────────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+  subgraph win["Windows host"]
+    browser["Browser / curl<br/>ping-local.test.bbl<br/>(hosts → 127.0.0.1)"]
+  end
+  subgraph k8s["Kubernetes · ns ping"]
+    gw["gateway<br/>nginx · TLS (local CA)<br/>LoadBalancer :443 / :80"]
+    ui["platform-ui<br/>/platform · /enduser · /login"]
+    am["am-0<br/>PingAM 8.1.1 · Tomcat 10.1<br/>realms / and alpha"]
+    idm["idm<br/>PingIDM 8.1.2"]
+    ds[("ds-0<br/>PingDS 8.1.2")]
+    job["platform-config Job<br/>(once per deploy)"]
+  end
+  browser -- "HTTPS :443" --> gw
+  gw -- "/platform /enduser /login /" --> ui
+  gw -- "/am/*" --> am
+  gw -- "/openidm/* /upload /export" --> idm
+  am -- "LDAPS 1636" --> ds
+  idm -- "StartTLS 1389" --> ds
+  idm -- "token introspection<br/>(idm-resource-server)" --> am
+  am -- "IDM Provisioning<br/>(idm-provisioning)" --> idm
+  job -. "install + configure via REST" .-> am
+```
+
+All connections to DS use TLS issued from the **DS deployment CA**. The browser-facing
+certificate comes from the **local platform CA**.
+
+### Data in DS
+
+One DS server holds four backends:
+
+```mermaid
+flowchart TB
+  ds[("ds-0")]
+  ds --> cfg["cfgStore · ou=am-config<br/>AM configuration"]
+  ds --> cts["amCts · ou=tokens<br/>AM sessions (external CTS)"]
+  ds --> ids["amIdentityStore · ou=identities<br/>ou=people → users, shared by AM and IDM"]
+  ds --> repo["idmRepo · dc=openidm,dc=forgerock,dc=com<br/>IDM internal data (config, roles, links, …)"]
 ```
 
 Everything is served from **one origin**: `https://ping-local.test.bbl`. The UIs, AM and
@@ -112,6 +127,24 @@ the Secret keys it needs: DS gets its own six; the config Job needs nearly all o
    (client `idm-resource-server`). Subject `(usr!amAdmin)` is mapped to `internal/user/openidm-admin`
    with the admin roles.
 
+```mermaid
+sequenceDiagram
+  autonumber
+  actor A as Admin (browser)
+  participant UI as Platform UI (/platform)
+  participant AM as AM (root realm)
+  participant IDM as IDM (rsFilter)
+  A->>UI: open /platform
+  UI->>AM: /oauth2/authorize (client idm-admin-ui)
+  AM-->>A: login page
+  A->>AM: amadmin + password
+  AM-->>UI: access token (scope fr:idm:*)
+  UI->>IDM: /openidm/... with Bearer token
+  IDM->>AM: /oauth2/introspect (client idm-resource-server)
+  AM-->>IDM: active, sub = (usr!amadmin)
+  IDM-->>UI: response as internal/user/openidm-admin
+```
+
 **End user (realm alpha):**
 
 1. `/enduser/?realm=alpha` → AM `/am/oauth2/realms/root/realms/alpha/authorize`
@@ -120,6 +153,26 @@ the Secret keys it needs: DS gets its own six; the config Job needs nearly all o
 3. IDM introspects the token. The subject `usr` is mapped to `managed/user/<sub>`, and since
    AM's user id = `fr-idm-uuid` = IDM `_id`, it's the same entry.
 
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as User (browser)
+  participant EU as End-user UI (/enduser)
+  participant AM as AM (realm alpha)
+  participant IDM as IDM (rsFilter)
+  participant DS as DS (ou=people,ou=identities)
+  U->>EU: open /enduser/?realm=alpha
+  EU->>AM: /oauth2/realms/root/realms/alpha/authorize (client end-user-ui)
+  AM-->>U: PlatformLogin journey
+  U->>AM: username + password
+  AM->>DS: find user (uid) and check password
+  AM-->>EU: access token, sub = fr-idm-uuid
+  EU->>IDM: /openidm/managed/user/{id} with Bearer token
+  IDM->>AM: /oauth2/introspect
+  IDM->>DS: read the same entry (fr-idm-uuid = _id)
+  IDM-->>EU: the user's own profile
+```
+
 **AM → IDM:** journeys and the IDM Provisioning service call IDM with tokens from client
 `idm-provisioning` (client credentials). IDM maps `(age!idm-provisioning)` to the
 `platform-provisioning` role.
@@ -127,6 +180,22 @@ the Secret keys it needs: DS gets its own six; the config Job needs nearly all o
 ## Configuration automation
 
 `deploy.sh` runs the `platform-config` Job (`src/config/configure.sh`, idempotent):
+
+```mermaid
+flowchart TD
+  start(["Job starts"]) --> wait["Wait for AM"]
+  wait --> q{"AM configured?<br/>isAlive = 200"}
+  q -- "no" --> inst["1 · POST /am/config/configurator"] --> login
+  q -- "yes" --> login["Login as amadmin"]
+  login --> s2["2 · realm alpha<br/>2b · root realm aliases"]
+  s2 --> s3["3 · OAuth2 providers<br/>4 · OAuth2 clients"]
+  s3 --> s5["5 · IDM Provisioning<br/>6 · Validation service"]
+  s5 --> s7["7 · journeys → alpha<br/>self-service trees, default journey"]
+  s7 --> s8["8a · fqdnMap<br/>8b · external CTS"]
+  s8 --> q2{"server settings<br/>changed?"}
+  q2 -- "yes" --> rs["print AM_RESTART_REQUIRED<br/>→ deploy.sh restarts AM"] --> done(["done"])
+  q2 -- "no" --> done
+```
 
 | Step | What | Why it's there |
 | --- | --- | --- |
@@ -151,6 +220,14 @@ with its own containerd image store. `build-images.sh` therefore runs
 and pods use `imagePullPolicy: Never`. Images are built straight from the zips with
 BuildKit named contexts (`--build-context apps=assets/apps`). Nothing is ever extracted
 into the repo.
+
+```mermaid
+flowchart LR
+  zip[/"assets/apps/*.zip"/] -- "--build-context apps=" --> bk["docker build<br/>(BuildKit)"]
+  bk --> dimg[("Docker image store")]
+  dimg -- "docker save | ctr import" --> kimg[("kind node<br/>desktop-control-plane<br/>containerd k8s.io")]
+  kimg -- "imagePullPolicy: Never" --> pods["pods"]
+```
 
 ## Design decisions
 

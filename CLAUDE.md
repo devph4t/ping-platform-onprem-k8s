@@ -25,6 +25,10 @@ and deployed to a local **Docker Desktop Kubernetes** cluster, fully automated.
    (small, descriptive commits). **Never commit** `logs/`, `progress/` (activity logs and plans
    stay local only), `.env`, generated certs/keys, or the vendor zips — all are in `.gitignore`.
    Log each commit in the activity log (`[GIT] commit <hash> — message`).
+8. **Docs stay in sync with the code.** Diagrams are **Mermaid** blocks (no ASCII art for new
+   diagrams; no `https://` inside Mermaid labels — it renders as "Unsupported markdown: link").
+   Before committing changes to scripts, Dockerfiles or docs, run `make lint` and `make docs-check`;
+   both must pass. New script → also a `make` target + a row in docs/running.md.
 
 ### Tools (shared toolbox: `D:\source_code\hobby\tools\_scripts`)
 
@@ -45,7 +49,9 @@ AREA ∈ `PLAN, DESIGN, ENV, DS, AM, IDM, UI, K8S, INGRESS, TLS, CONFIG, VERIFY,
 on-premise/
 ├─ CLAUDE.md                  # this file: rules, design, facts
 ├─ README.md                  # entry point: what, quick start, URLs, doc index
-├─ docs/                      # setup, running, daily-operations, troubleshooting, architecture, configuration
+├─ Makefile                   # `make help` — short names for src/scripts/* (setup, build, deploy, verify, …)
+├─ docs/                      # dependencies, setup, running, daily-operations, troubleshooting, architecture,
+│                             #   configuration — diagrams are Mermaid (check: `make docs-check`)
 ├─ .env.example               # all settings + placeholder secrets (committed)
 ├─ .env                       # real values (git-ignored)  FQDN=ping-local.test.bbl
 ├─ .secrets/                  # generated certs/keys: ds-ca.pem, platform-ca.*, gateway.* (git-ignored)
@@ -129,6 +135,7 @@ Single namespace `${NAMESPACE}` (default `ping`), single replica of each compone
 All project scripts are `.sh`; **no `.ps1` scripts** in this project (user decision 2026-11-11).
 WSL needs one-time setup: Docker Desktop → Settings → Resources → WSL integration → enable
 `Ubuntu-26.04`, then `bash src/scripts/setup-wsl.sh`. Git Bash also works but is not the target.
+The root **Makefile** wraps every script (`make help`); scripts remain the source of truth.
 Note for Claude: the Bash tool is Git Bash; to test in WSL write a script file and run
 `MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-26.04 -- bash /mnt/...file.sh` (inline `bash -c` quoting breaks).
 
