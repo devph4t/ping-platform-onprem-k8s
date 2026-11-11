@@ -22,7 +22,7 @@ WIN_TEMP="$(winps '[IO.Path]::GetTempPath()')"
 PS1_UNIX="$(unix_path "$WIN_TEMP")/add-hosts-entry-$$.ps1"
 cat > "$PS1_UNIX" <<EOF
 \$h = "\$env:SystemRoot\\System32\\drivers\\etc\\hosts"
-Add-Content -Path \$h -Value "\`r\`n127.0.0.1 $NAME  # ping-platform on-premise (k8s ingress)" -Encoding ascii
+Add-Content -Path \$h -Value "\`r\`n127.0.0.1 $NAME  # ping-platform on-premise (k8s gateway)" -Encoding ascii
 ipconfig /flushdns | Out-Null
 EOF
 PS1_WIN="$(win_path "$PS1_UNIX")"

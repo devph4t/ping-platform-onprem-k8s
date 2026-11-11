@@ -12,6 +12,7 @@ data:
     server {
         listen 8080;
         server_name _;
+        server_tokens off;
         location = /healthz { access_log off; return 200 "ok\n"; }
         location / { return 301 https://${FQDN}$request_uri; }
     }
@@ -19,6 +20,7 @@ data:
     # :8443 (Service :443) — TLS, route by path
     server {
         listen 8443 ssl;
+        server_tokens off;       # hide the nginx version in headers and error pages
         http2 on;
         server_name ${FQDN};
         absolute_redirect off;   # else nginx's own redirects leak the container port (:8443)
@@ -73,9 +75,11 @@ spec:
         # changes when the rendered nginx config changes → rollout restart
         checksum/config: "${GATEWAY_CONFIG_CHECKSUM}"
     spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 101, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: nginx
           image: nginxinc/nginx-unprivileged:1.29-alpine
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           imagePullPolicy: IfNotPresent
           ports:
             - { name: http,  containerPort: 8080 }

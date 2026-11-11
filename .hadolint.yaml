@@ -1,0 +1,8 @@
+# hadolint config (run: see docs/running.md → "Lint")
+ignored:
+  # COPY --from=apps / --from=config refer to BuildKit named build contexts
+  # (docker build --build-context apps=assets/apps), not to FROM stages.
+  - DL3022
+  # Package versions are not pinned in apt/apk installs (dev images, rebuilt often).
+  - DL3008
+  - DL3018

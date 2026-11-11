@@ -11,7 +11,9 @@ ARG IDM_ZIP=IDM-8.1.2.zip
 COPY --from=apps ${IDM_ZIP} /tmp/idm.zip
 RUN unzip -q /tmp/idm.zip -d /opt && rm /tmp/idm.zip
 # External DS repo: replace hard-coded localhost:31389 / uid=admin / password with
-# property placeholders, resolved from env (OPENIDM_REPO_HOST, ...) or boot.properties.
+# &{openidm.repo.*} property placeholders; values come from IDM_PROP_* env vars, which
+# entrypoint.sh writes into resolver/boot.properties.
+# hadolint ignore=SC2016
 RUN f=/opt/openidm/conf/repo.ds.json \
  && sed -i \
       -e 's|"hostname" : "localhost"|"hostname" : "\&{openidm.repo.host\|localhost}"|' \

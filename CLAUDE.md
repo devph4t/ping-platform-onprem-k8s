@@ -44,59 +44,49 @@ AREA ∈ `PLAN, DESIGN, ENV, DS, AM, IDM, UI, K8S, INGRESS, TLS, CONFIG, VERIFY,
 ```text
 on-premise/
 ├─ CLAUDE.md                  # this file: rules, design, facts
-├─ .env.example               # all settings + placeholder secrets (committed)
-├─ .env                       # real values (git-ignored)  FQDN=ping-local.test.bbl
-├─ .secrets/                  # generated certs/keys, e.g. ds-ca.pem (git-ignored)
-├─ .gitignore                 # ignores logs/, progress/, .env, certs, vendor zips
-├─ assets/apps/               # vendor zips (READ-ONLY input, git-ignored; README.md lists them)
-│   ├─ DS-8.1.2.zip  AM-8.1.1.zip  IDM-8.1.2.zip  PlatformUI-8.1.2.0813.zip
-├─ src/
-│   ├─ docker/                # one build context per image; zips passed via
-│   │   │                     #   `docker build --build-context apps=assets/apps`
-│   │   ├─ ds/                #   Dockerfile, entrypoint.sh (first-boot setup w/ profiles)
-│   │   ├─ am/                #   Dockerfile (Tomcat 10.1 + AM war as /am), setenv.sh
-│   │   ├─ idm/               #   Dockerfile, conf/ overrides (repo.ds, authentication, cors, ui)
-│   │   ├─ platform-ui/       #   Dockerfile (nginx + www/ + variable_replacement.sh), nginx.conf
-│   │   └─ platform-config/   #   Dockerfile: alpine + curl/jq/envsubst + src/config + vendor sample journeys
-│   │                         #   (idm/platform/ = build-time IDM conf patch: rsFilter, shared identity store)
-│   ├─ k8s/                   # manifests as templates, ${VAR} filled from .env at deploy time
-│   │   ├─ 00-namespace.yaml
-│   │   ├─ 10-secrets.yaml
-│   │   ├─ 20-ds.yaml         #   StatefulSet + headless Service + PVC
-│   │   ├─ 30-am.yaml         #   StatefulSet (PVC for AM config dir) + Service
-│   │   ├─ 40-idm.yaml        #   Deployment + Service
-│   │   ├─ 50-platform-ui.yaml#   ONE Deployment + Service serving /platform /enduser /login
-│   │   ├─ 60-gateway.yaml    #   own nginx gateway: TLS + path routing, LoadBalancer :443 (no ingress controller)
-│   │   ├─ 70-platform-config-job.yaml # Job: AM install + platform config (runs configure.sh)
-│   ├─ config/                # configure.sh + am/configurator.params + am/clients/*.json (built into platform-config image)
-│   └─ scripts/               # entry points (bash; run from Git Bash or WSL)
-│       ├─ lib.sh             #   load .env, render templates, logging helper
-│       ├─ preflight.sh       #   check docker, k8s context, hosts entry, RAM
-│       ├─ tls.sh             #   local CA + server cert for ${FQDN} (.secrets/), --trust imports CA to Windows (user store)
-│       ├─ build-images.sh    #   build ds/am/idm/platform-ui images
-│       ├─ deploy.sh          #   render + kubectl apply in order, wait for ready
-│       ├─ verify.sh          #   smoke tests (health endpoints, admin login)
-│       └─ teardown.sh        #   delete namespace (+ optional PVCs)
 ├─ README.md                  # entry point: what, quick start, URLs, doc index
 ├─ docs/                      # setup, running, daily-operations, troubleshooting, architecture, configuration
-├─ progress/plan/             # plan files (created by new-plan tool)
-└─ logs/activity/             # activity logs (created by log-activity tool)
+├─ .env.example               # all settings + placeholder secrets (committed)
+├─ .env                       # real values (git-ignored)  FQDN=ping-local.test.bbl
+├─ .secrets/                  # generated certs/keys: ds-ca.pem, platform-ca.*, gateway.* (git-ignored)
+├─ .rendered/                 # rendered manifests + last platform-config.log (git-ignored)
+├─ .gitignore .gitattributes .hadolint.yaml .shellcheckrc
+├─ assets/apps/               # vendor zips (READ-ONLY input, git-ignored; README.md lists them)
+├─ src/
+│   ├─ docker/                # one build context per image; zips via `--build-context apps=assets/apps`
+│   │   ├─ ds/                #   Dockerfile, entrypoint.sh (first-boot setup with 4 profiles, TLS-only)
+│   │   ├─ am/                #   Dockerfile (Tomcat 10.1 + AM war at /am), entrypoint.sh (truststore)
+│   │   ├─ idm/               #   Dockerfile, entrypoint.sh (CA + IDM_PROP_*), platform/ (build-time conf patch:
+│   │   │                     #     rsFilter, shared identity store, platformSettings)
+│   │   ├─ platform-ui/       #   Dockerfile, entrypoint.sh (URLs from FQDN), nginx.conf
+│   │   └─ platform-config/   #   Dockerfile: alpine + curl/jq/envsubst + src/config + vendor sample journeys
+│   ├─ k8s/                   # manifest templates, ${VAR} filled from .env by deploy.sh
+│   │   ├─ 00-namespace.yaml  #   (Secrets are created by deploy.sh, never as YAML files)
+│   │   ├─ 20-ds.yaml         #   StatefulSet + headless Service + PVC
+│   │   ├─ 30-am.yaml         #   StatefulSet (PVC for AM home) + Service
+│   │   ├─ 40-idm.yaml        #   Deployment + Service
+│   │   ├─ 50-platform-ui.yaml#   ONE Deployment + Service serving /platform /enduser /login
+│   │   ├─ 60-gateway.yaml    #   own nginx gateway: TLS + path routing, LoadBalancer :443/:80
+│   │   └─ 70-platform-config-job.yaml # Job: AM install + platform config (configure.sh)
+│   ├─ config/                # configure.sh + am/configurator.params + am/clients/*.json
+│   └─ scripts/               # entry points (bash, run in WSL) — see "Scripts" below
+├─ progress/plan/             # plan files (new-plan tool, git-ignored)
+└─ logs/activity/             # activity logs, one file per hour (log-activity tool, git-ignored)
 ```
 
 ### Runtime architecture
 
 ```text
-browser ──https://${FQDN}──► gateway (nginx Deployment, Service LoadBalancer :443 → Docker Desktop localhost; TLS from local CA)
-   /am/*                      → am:8080        (Tomcat, AM 8.1.1)
-   /openidm/* /upload /export → idm:8080       (IDM 8.1.2)
-   /platform/*                → platform-ui:8080  (one nginx serves all three apps)
-   /enduser/*                 → platform-ui:8080
-   /login/*                   → platform-ui:8080
-   /                          → redirect /platform
+browser ──https://${FQDN}──► gateway (nginx, Service LoadBalancer :443 → Docker Desktop localhost; local-CA cert)
+   /am/*                      → am:8080           (Tomcat, AM 8.1.1; realms / and alpha)
+   /openidm/* /upload /export → idm:8080          (IDM 8.1.2; no native admin UI in 8.1)
+   /platform/* /enduser/* /login/* → platform-ui:8080  (one nginx serves all three apps)
+   /                          → redirect /platform/
 
-am  ──LDAP 1389──► ds-0  (profiles: am-config, am-cts, am-identity-store, idm-repo)
-idm ──LDAP 1389──► ds-0
-idm ──https──► am (rsFilter token introspection)    am ──► idm (IDM provisioning client)
+am  ──LDAPS 1636──►    ds-0  (am-config, am-cts, am-identity-store, idm-repo) — TLS required, DS CA
+idm ──StartTLS 1389──► ds-0  (repo + managed/user in ou=people,ou=identities = shared identity store)
+idm ──http──► am.<ns>.svc:8080/am/oauth2/introspect (rsFilter)     am ──http──► idm (IDM Provisioning)
+platform-config Job ──http──► am (install + REST config)
 ```
 
 Single namespace `${NAMESPACE}` (default `ping`), single replica of each component (dev sizing).
@@ -109,11 +99,11 @@ Single namespace `${NAMESPACE}` (default `ping`), single replica of each compone
 | --- | --- |
 | DS 8.1.2 | Needs **Java 25+** (`ERROR: ... valid Java 25` on Temurin 21). `setup` needs `--deploymentId` + `--deploymentIdPassword` (make with `dskeymgr create-deployment-id`). |
 | DS security | **Every simple bind without TLS is rejected** (`13 Confidentiality Required`) — uid=admin and the AM service accounts alike. Clients must use LDAPS 1636 or StartTLS 1389 and trust the deployment CA (`dskeymgr export-ca-cert`, subject `O=ForgeRock.com, CN=Deployment key`). Server cert SAN = `ds-0`, `<--hostname>`, `localhost`. |
-| DS accounts | `uid=admin` (root), `uid=am-config,ou=admins,ou=am-config`, `uid=openam_cts,ou=admins,ou=famrecords,ou=openam-session,ou=tokens`, `uid=am-identity-bind-account,ou=admins,ou=identities`, `uid=Monitor`. IDM repo base `dc=openidm,dc=example,dc=com`. |
+| DS accounts | `uid=admin` (root), `uid=am-config,ou=admins,ou=am-config`, `uid=openam_cts,ou=admins,ou=famrecords,ou=openam-session,ou=tokens`, `uid=am-identity-bind-account,ou=admins,ou=identities`, `uid=Monitor`. IDM repo base `dc=openidm,dc=forgerock,dc=com` (`idm-repo/domain=forgerock.com`). |
 | DS image | `ping-local/ds:8.1.2` (alpine unpack → temurin:25-jre + tini, uid 11111). Volume `/opt/opendj/data` = `instance/` + `deployment-id` + `.setup-complete`. `instance.loc` must NOT exist before setup; entrypoint restores it on later boots. Use `DS_JAVA_ARGS` (`OPENDJ_JAVA_ARGS` deprecated). First boot ~15 s, restart ~7 s, ~750 MiB RAM. |
 | DS profiles | `am-config:6.5.0` (`amConfigAdminPassword`, baseDn `ou=am-config`), `am-cts:6.5.0` (`amCtsAdminPassword`, `tokenExpirationPolicy`), `am-identity-store:8.0.0` (`amIdentityStoreAdminPassword`, baseDn `ou=identities`), `idm-repo:8.1.0` (`domain` → `dc=openidm,dc=<domain>`) |
 | AM 8.1.1 | Zip holds `openam/AM-8.1.1.war` (+ Config-Upgrader, crypto tool, Fedlet). No Amster → configure via REST/configurator. WAR = Java 17 bytecode (class v61), Servlet 5 / Jakarta → **Tomcat 10.1 + JDK 21** works. Servlets registered in code (not web.xml). |
-| AM install | `POST /am/config/configurator` (GET → 405). Field list in `src/config/am-configurator.params`. **License field is `acceptLicense=true`** (old `ACCEPT_LICENSES` → "License terms not accepted", still returns "Configuration complete!" — check `openam/var/install.log`). Install ~17 s. Unconfigured AM: `/am/isAlive.jsp` → 302 to `/am/config/options.htm`; configured → 200. |
+| AM install | `POST /am/config/configurator` (GET → 405). Field list in `src/config/am/configurator.params`. **License field is `acceptLicense=true`** (old `ACCEPT_LICENSES` → "License terms not accepted", still returns "Configuration complete!" — check `openam/var/install.log`). Install ~17 s. Unconfigured AM: `/am/isAlive.jsp` → 302 to `/am/config/options.htm`; configured → 200. |
 | AM image | `ping-local/am:8.1.1` (tomcat:10.1-jdk21-temurin, exploded war at `/am`, RemoteIpValve for X-Forwarded-*, uid 11111). Volume `/home/forgerock` holds `openam/` + `.openamcfg/` (bootstrap) — recreated container starts configured in ~15 s. Entrypoint builds truststore = JDK cacerts + `/var/run/secrets/trusted-ca/*.pem`. ~550 MiB idle, ~1 GiB after config. |
 | IDM 8.1.2 | Ships `bin/Custom.Dockerfile` (base `gcr.io/forgerock-io/java-21`, user 11111, port 8080) and `bin/docker-entrypoint.sh`. `conf/repo.ds.json` = external DS, **base `dc=openidm,dc=forgerock,dc=com`** (so DS `idm-repo/domain` = `forgerock.com`), startTLS, truststore `security/truststore` (JKS, pass in `security/storepass`). CORS filter class `org.eclipse.jetty.ee10.servlets.CrossOriginFilter`. Props in `resolver/boot.properties`. |
 | IDM image | `ping-local/idm:8.1.2` (temurin:21-jre + fonts-dejavu + tini, uid 11111). Build patches `repo.ds.json` → `&{openidm.repo.host\|localhost}`, `&{openidm.repo.port\|1389}`, `&{openidm.repo.binddn\|uid=admin}`, `&{openidm.repo.password}`. Entrypoint imports `/var/run/secrets/trusted-ca/*.pem` into IDM truststore and writes env `IDM_PROP_a_b_c=v` → `a.b.c=v` in boot.properties, then runs vendor entrypoint. Ready ~18 s, ~850 MiB. Verified: managed user create/query stored at `ou=user,ou=managed,dc=openidm,dc=forgerock,dc=com`. |

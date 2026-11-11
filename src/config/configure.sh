@@ -21,6 +21,7 @@ CONFIG_DIR="${CONFIG_DIR:-/opt/platform-config}"
 TREES_DIR="${TREES_DIR:-$CONFIG_DIR/sample-trees/root}"
 AM_BASE="${AM_BASE:-http://am.${NAMESPACE}.svc.cluster.local:8080/am}"
 IDM_URL="${IDM_URL:-http://idm.${NAMESPACE}.svc.cluster.local:8080}"
+# shellcheck disable=SC2016  # literal ${VAR} list for envsubst
 SUBST_VARS='${FQDN} ${COOKIE_DOMAIN} ${DS_HOST} ${AM_ADMIN_PASSWORD} ${AM_ENCRYPTION_KEY} ${AM_CONFIG_ADMIN_PASSWORD} ${AM_IDENTITY_STORE_ADMIN_PASSWORD} ${IDM_RS_CLIENT_SECRET} ${IDM_PROVISIONING_CLIENT_SECRET}'
 
 log()  { echo "[$(date -u +%H:%M:%S)] $*"; }
@@ -37,7 +38,7 @@ TOKEN=""
 am() {
   local method="$1" path="$2" api="${3:-resource=1.0}" out code
   out="$(mktemp)"
-  local args=(-s -o "$out" -w '%{http_code}' -X "$method" "${FWD[@]}"
+  local args=(-s -m 120 -o "$out" -w '%{http_code}' -X "$method" "${FWD[@]}"
               -H "Accept-API-Version: $api" -H "iPlanetDirectoryPro: $TOKEN" "${AM_EXTRA_HEADERS[@]}")
   if [ "$method" = POST ] || [ "$method" = PUT ]; then
     args+=(-H "Content-Type: application/json" --data-binary @-)
@@ -50,7 +51,7 @@ am() {
 }
 # exists PATH → 0 if GET returns 200
 exists() {
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "${FWD[@]}" -H "Accept-API-Version: ${2:-resource=1.0}" \
+  [ "$(curl -s -m 60 -o /dev/null -w '%{http_code}' "${FWD[@]}" -H "Accept-API-Version: ${2:-resource=1.0}" \
         -H "iPlanetDirectoryPro: $TOKEN" "$AM_BASE/json$1")" = 200 ]
 }
 render() { envsubst "$SUBST_VARS" < "$1"; }
@@ -58,7 +59,7 @@ realm_path() { [ "$1" = root ] && echo "/realms/root" || echo "/realms/root/real
 
 # --- 0. wait for AM ------------------------------------------------------------
 step "Waiting for AM at $AM_BASE"
-for i in $(seq 1 120); do
+for _ in $(seq 1 120); do
   code="$(curl -s -o /dev/null -w '%{http_code}' "${FWD[@]}" "$AM_BASE/isAlive.jsp" || true)"
   [ "$code" = 200 ] || [ "$code" = 302 ] && break
   sleep 5
@@ -77,7 +78,7 @@ else
   done < <(render "$CONFIG_DIR/am/configurator.params")
   resp="$(curl -s -m 900 "${FWD[@]}" "${args[@]}" "$AM_BASE/config/configurator")"
   log "configurator: $resp"
-  for i in $(seq 1 60); do
+  for _ in $(seq 1 60); do
     [ "$(curl -s -o /dev/null -w '%{http_code}' "${FWD[@]}" "$AM_BASE/isAlive.jsp")" = 200 ] && break; sleep 5
   done
   [ "$(curl -s -o /dev/null -w '%{http_code}' "${FWD[@]}" "$AM_BASE/isAlive.jsp")" = 200 ] \
@@ -177,18 +178,20 @@ T="$(realm_path alpha)/realm-config/authentication/authenticationtrees"
 put_node() { # file
   local d type id
   d="$(jq '.data' "$1")"; type="$(echo "$d" | jq -r '._type._id')"; id="$(echo "$d" | jq -r '._id')"
-  echo "$d" | jq 'del(._rev, ._type, ._outcomes)' | am PUT "$T/nodes/$type/$id" >/dev/null 2>&1
+  echo "$d" | jq 'del(._rev, ._type, ._outcomes)' | am PUT "$T/nodes/$type/$id" >/dev/null 2>"$ERR_SINK"
 }
 put_tree() { # file
   local d id
   d="$(jq '.data' "$1")"; id="$(echo "$d" | jq -r '._id')"
-  echo "$d" | jq 'del(._rev)' | am PUT "$T/trees/$id" >/dev/null 2>&1
+  echo "$d" | jq 'del(._rev)' | am PUT "$T/trees/$id" >/dev/null 2>"$ERR_SINK"
 }
 mapfile -t node_files < <(find "$TREES_DIR" -name '*.json' ! -path '*/AuthTree/*' ! -path '*/PageNode/*')
 mapfile -t page_files < <(find "$TREES_DIR/PageNode" -name '*.json' 2>/dev/null)
 mapfile -t tree_files < <(find "$TREES_DIR/AuthTree" -name '*.json')
 pending=("${node_files[@]}" "${page_files[@]}" "${tree_files[@]}")
 for pass in 1 2 3 4; do
+  # dependencies (page nodes, inner trees) resolve over passes; show errors only on the last one
+  ERR_SINK=/dev/null; [ "$pass" = 4 ] && ERR_SINK=/dev/stderr
   failed=()
   for f in "${pending[@]}"; do
     if [[ "$f" == */AuthTree/* ]]; then put_tree "$f" || failed+=("$f")

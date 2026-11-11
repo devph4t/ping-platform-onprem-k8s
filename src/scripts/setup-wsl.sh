@@ -32,9 +32,9 @@ fi
 # --- 2. apt packages ---------------------------------------------------------
 info "Packages"
 missing=()
-for pair in perl:perl openssl:openssl unzip:unzip curl:curl envsubst:gettext-base make:make; do
+for pair in perl:perl openssl:openssl unzip:unzip curl:curl envsubst:gettext-base make:make python3:python3; do
   cmd="${pair%%:*}"; pkg="${pair#*:}"
-  command -v "$cmd" >/dev/null 2>&1 && ok "$cmd" || missing+=("$pkg")
+  if command -v "$cmd" >/dev/null 2>&1; then ok "$cmd"; else missing+=("$pkg"); fi
 done
 if [ "${#missing[@]}" -gt 0 ]; then
   info "Installing: ${missing[*]} (sudo)"
@@ -60,19 +60,20 @@ fi
 
 # --- 4. kubeconfig -----------------------------------------------------------
 info "kubeconfig"
+# shellcheck disable=SC2016  # $env:USERPROFILE is PowerShell, must stay literal
 WIN_HOME="$(unix_path "$(winps '$env:USERPROFILE')")"
 WIN_KCFG="$WIN_HOME/.kube/config"
 [ -f "$WIN_KCFG" ] || die "Windows kubeconfig not found: $WIN_KCFG (is Kubernetes enabled in Docker Desktop?)"
 mkdir -p "$HOME/.kube"
 if kubectl config get-contexts "$CONTEXT" >/dev/null 2>&1; then
-  ok "context '$CONTEXT' already configured (${KUBECONFIG:-~/.kube/config})"
+  ok "context '$CONTEXT' already configured (${KUBECONFIG:-$HOME/.kube/config})"
 elif [ ! -e "$HOME/.kube/config" ]; then
   # Symlink so it follows Docker Desktop when it rewrites the file (e.g. new API port).
   ln -s "$WIN_KCFG" "$HOME/.kube/config"
   ok "linked ~/.kube/config -> $WIN_KCFG"
 else
-  die "~/.kube/config exists without context '$CONTEXT'. Merge manually, e.g.:
-       KUBECONFIG=~/.kube/config:$WIN_KCFG kubectl config view --flatten > /tmp/k && mv /tmp/k ~/.kube/config"
+  die "$HOME/.kube/config exists without context '$CONTEXT'. Merge manually, e.g.:
+       KUBECONFIG=$HOME/.kube/config:$WIN_KCFG kubectl config view --flatten > /tmp/k && mv /tmp/k $HOME/.kube/config"
 fi
 
 # --- 5. cluster reachability -------------------------------------------------

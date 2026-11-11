@@ -28,7 +28,7 @@ else
 fi
 
 info "Tools"
-for c in docker kubectl perl openssl; do check "command: $c" command -v "$c"; done
+for c in docker kubectl perl openssl curl python3; do check "command: $c" command -v "$c"; done
 
 info "Docker"
 check "docker daemon reachable" docker info
@@ -55,6 +55,16 @@ else
   echo "     fix (approve the UAC prompt on Windows):  bash src/scripts/add-hosts-entry.sh"
   FAILS=$((FAILS+1))
 fi
+
+info "Deploy prerequisites (warnings only — created by the scripts named)"
+pre() { if "$@" >/dev/null 2>&1; then ok "$DESC"; else warn "$DESC — run: $FIX"; fi; }
+DESC="DS deployment ID in .env";   FIX="bash src/scripts/ds-deployment-id.sh"; pre test -n "${DS_DEPLOYMENT_ID:-}"
+DESC="DS CA .secrets/ds-ca.pem";   FIX="bash src/scripts/ds-deployment-id.sh"; pre test -s "$SECRETS_DIR/ds-ca.pem"
+DESC="gateway cert for $FQDN";     FIX="bash src/scripts/tls.sh";              pre openssl x509 -in "$SECRETS_DIR/gateway.crt" -noout -checkend 0
+node_images="$(docker exec "$KIND_NODE_CONTAINER" ctr -n k8s.io images ls -q 2>/dev/null || true)"
+for img in "$IMAGE_DS" "$IMAGE_AM" "$IMAGE_IDM" "$IMAGE_UI" "$IMAGE_CONFIG"; do
+  DESC="image $img in cluster"; FIX="bash src/scripts/build-images.sh"; pre grep -qx "docker.io/$img" <<<"$node_images"
+done
 
 echo
 if [ "$FAILS" -eq 0 ]; then ok "preflight passed"; else fail "preflight: $FAILS check(s) failed"; fi

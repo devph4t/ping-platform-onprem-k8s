@@ -1,0 +1,5 @@
+# shellcheck config (run: see docs/running.md → "Lint")
+# Follow `source` statements (lib.sh) when linting a script.
+external-sources=true
+# SC1091: sourced files are resolved at run time (e.g. a temp file in load_env).
+disable=SC1091

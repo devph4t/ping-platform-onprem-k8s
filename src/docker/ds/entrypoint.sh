@@ -75,12 +75,12 @@ do_setup() {
     --adminConnectorPort 4444 \
     --httpPort 8080 \
     --profile am-config \
-    --set "am-config/amConfigAdminPassword:$AM_CONFIG_ADMIN_PASSWORD" \
+    --set:env "am-config/amConfigAdminPassword:AM_CONFIG_ADMIN_PASSWORD" \
     --profile am-cts \
-    --set "am-cts/amCtsAdminPassword:$AM_CTS_ADMIN_PASSWORD" \
+    --set:env "am-cts/amCtsAdminPassword:AM_CTS_ADMIN_PASSWORD" \
     --set "am-cts/tokenExpirationPolicy:${DS_CTS_EXPIRATION:-am-sessions-only}" \
     --profile am-identity-store \
-    --set "am-identity-store/amIdentityStoreAdminPassword:$AM_IDENTITY_STORE_ADMIN_PASSWORD" \
+    --set:env "am-identity-store/amIdentityStoreAdminPassword:AM_IDENTITY_STORE_ADMIN_PASSWORD" \
     --profile idm-repo \
     --set "idm-repo/domain:${DS_IDM_REPO_DOMAIN:-forgerock.com}" \
     --acceptLicense \

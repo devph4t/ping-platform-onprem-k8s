@@ -14,9 +14,11 @@ spec:
       labels: { app: platform-config, app.kubernetes.io/part-of: ping-platform }
     spec:
       restartPolicy: Never
+      securityContext: { runAsNonRoot: true, runAsUser: 11111, runAsGroup: 0, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: configure
           image: "${IMAGE_CONFIG}"
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           imagePullPolicy: Never
           env:
             - { name: FQDN, value: "${FQDN}" }

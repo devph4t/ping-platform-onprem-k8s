@@ -42,6 +42,10 @@ hostnames and needs CORS in AM and IDM.
 | `gateway` | Deployment + Service `LoadBalancer` | none | `nginxinc/nginx-unprivileged:1.29-alpine` |
 | `platform-config` | Job (re-created every deploy) | none | `ping-local/platform-config:1` |
 
+Every pod runs as non-root with the `RuntimeDefault` seccomp profile. Every container has
+`allowPrivilegeEscalation: false` and drops all Linux capabilities. Each workload gets only
+the Secret keys it needs: DS gets its own six; the config Job needs nearly all of them.
+
 ### DS (directory)
 
 - First boot runs `setup` with the profiles `am-config`, `am-cts`,

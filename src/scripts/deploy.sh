@@ -25,11 +25,13 @@ for img in "$IMAGE_DS" "$IMAGE_AM" "$IMAGE_IDM" "$IMAGE_UI" "$IMAGE_CONFIG"; do
   grep -qx "docker.io/$img" <<<"$node_images" || die "image $img not in cluster — run: bash src/scripts/build-images.sh"
 done
 ok "images present in node"
-[ -n "${DS_DEPLOYMENT_ID:-}" ] && [ -s "$SECRETS_DIR/ds-ca.pem" ] \
-  || die "DS deployment ID/CA missing — run: bash src/scripts/ds-deployment-id.sh"
+if [ -z "${DS_DEPLOYMENT_ID:-}" ] || [ ! -s "$SECRETS_DIR/ds-ca.pem" ]; then
+  die "DS deployment ID/CA missing — run: bash src/scripts/ds-deployment-id.sh"
+fi
 ok "DS deployment ID + CA"
-[ -s "$SECRETS_DIR/gateway.crt" ] && [ -s "$SECRETS_DIR/gateway.key" ] \
-  || die "gateway TLS cert missing — run: bash src/scripts/tls.sh"
+if [ ! -s "$SECRETS_DIR/gateway.crt" ] || [ ! -s "$SECRETS_DIR/gateway.key" ]; then
+  die "gateway TLS cert missing — run: bash src/scripts/tls.sh"
+fi
 ok "gateway TLS cert"
 
 # --- 2. namespace + secrets --------------------------------------------------
@@ -90,7 +92,7 @@ render "$K8S_DIR/70-platform-config-job.yaml" "$OUT/70-platform-config-job.yaml"
 kn delete job platform-config --ignore-not-found --wait=true >/dev/null
 kn apply -f "$OUT/70-platform-config-job.yaml"
 t0=$SECONDS; status=""
-for i in $(seq 1 180); do   # up to 15 min (first run installs AM)
+for _ in $(seq 1 180); do   # up to 15 min (first run installs AM)
   s="$(kn get job platform-config -o jsonpath='{.status.succeeded}/{.status.failed}')"
   [ "${s%%/*}" = 1 ] && { status=ok; break; }
   [ -n "${s##*/}" ] && [ "${s##*/}" -ge 1 ] && { status=failed; break; }

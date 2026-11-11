@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # path vars are used by the scripts that source this file
 # Shared helpers. Source this from other scripts:  source "$(dirname "$0")/lib.sh"
 # Works in Git Bash (Windows) and WSL/Linux.
 

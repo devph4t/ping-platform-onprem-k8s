@@ -24,9 +24,11 @@ spec:
     metadata:
       labels: { app: platform-ui, app.kubernetes.io/part-of: ping-platform }
     spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 101, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: platform-ui
           image: "${IMAGE_UI}"
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           imagePullPolicy: Never
           env:
             - { name: FQDN, value: "${FQDN}" }

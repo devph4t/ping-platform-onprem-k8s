@@ -31,18 +31,30 @@ spec:
     metadata:
       labels: { app: ds, app.kubernetes.io/part-of: ping-platform }
     spec:
-      securityContext: { runAsUser: 11111, runAsGroup: 0, fsGroup: 0 }
+      securityContext: { runAsNonRoot: true, runAsUser: 11111, runAsGroup: 0, fsGroup: 0, seccompProfile: { type: RuntimeDefault } }
       terminationGracePeriodSeconds: 60
       containers:
         - name: ds
           image: "${IMAGE_DS}"
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           imagePullPolicy: Never      # loaded into the kind node by build-images.sh
           env:
             - { name: DS_HOSTNAME, value: "${DS_HOST}" }
             - { name: DS_SERVER_ID, value: "ds-0" }
             - { name: DS_IDM_REPO_DOMAIN, value: "${DS_IDM_REPO_DOMAIN}" }
-          envFrom:
-            - secretRef: { name: platform-secrets }
+            # only the secrets DS needs (least privilege)
+            - name: DS_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: platform-secrets, key: DS_ROOT_PASSWORD } }
+            - name: DS_DEPLOYMENT_ID_PASSWORD
+              valueFrom: { secretKeyRef: { name: platform-secrets, key: DS_DEPLOYMENT_ID_PASSWORD } }
+            - name: DS_DEPLOYMENT_ID
+              valueFrom: { secretKeyRef: { name: platform-secrets, key: DS_DEPLOYMENT_ID } }
+            - name: AM_CONFIG_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: platform-secrets, key: AM_CONFIG_ADMIN_PASSWORD } }
+            - name: AM_CTS_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: platform-secrets, key: AM_CTS_ADMIN_PASSWORD } }
+            - name: AM_IDENTITY_STORE_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: platform-secrets, key: AM_IDENTITY_STORE_ADMIN_PASSWORD } }
           ports:
             - { name: ldap,  containerPort: 1389 }
             - { name: ldaps, containerPort: 1636 }

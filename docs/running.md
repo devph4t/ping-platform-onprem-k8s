@@ -102,4 +102,23 @@ and all users gone.
 | `tls.sh [--renew] [--trust]` | HTTPS certificate for `FQDN`; trust the CA in Windows |
 | `add-hosts-entry.sh [fqdn]` | Add the Windows hosts entry (UAC prompt) |
 
-All scripts write a line to the project activity log (`logs/activity/`, git-ignored).
+All scripts write a line to the project activity log (`logs/activity/`, git-ignored). It
+keeps one file per hour.
+
+## Lint
+
+The repo is kept clean under **shellcheck** and **hadolint**. Their configs are
+`.shellcheckrc` and `.hadolint.yaml`, and each ignored rule is explained there. Run them
+from Git Bash: pulling these images from WSL can fail on Docker Desktop's credential
+helper.
+
+```bash
+export MSYS_NO_PATHCONV=1
+docker run --rm -v "$(pwd -W)":/mnt:ro -w /mnt koalaman/shellcheck:v0.10.0 -x \
+  src/scripts/*.sh src/config/configure.sh src/docker/*/entrypoint.sh src/docker/idm/platform/patch-conf.sh
+for f in src/docker/*/Dockerfile; do
+  docker run --rm -i -v "$(pwd -W)/.hadolint.yaml":/cfg.yaml:ro hadolint/hadolint:v2.12.0-alpine hadolint --config /cfg.yaml - < "$f"
+done
+```
+
+Both must print nothing.

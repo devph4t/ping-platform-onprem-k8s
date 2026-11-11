@@ -1,5 +1,5 @@
 # PingAM — single replica StatefulSet; /home/forgerock (config + bootstrap) on a PVC.
-# Until the am-install job runs, /am/isAlive.jsp answers 302 (installer) — counts as ready.
+# Until the platform-config Job installs AM, /am/isAlive.jsp answers 302 (installer) — counts as ready.
 apiVersion: v1
 kind: Service
 metadata:
@@ -26,15 +26,17 @@ spec:
     metadata:
       labels: { app: am, app.kubernetes.io/part-of: ping-platform }
     spec:
-      securityContext: { runAsUser: 11111, runAsGroup: 0, fsGroup: 0 }
+      securityContext: { runAsNonRoot: true, runAsUser: 11111, runAsGroup: 0, fsGroup: 0, seccompProfile: { type: RuntimeDefault } }
       initContainers:
         - name: wait-for-ds
           image: "${IMAGE_AM}"
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           imagePullPolicy: Never
           command: [bash, -c, 'until (exec 3<>/dev/tcp/${DS_HOST}/1636) 2>/dev/null; do echo "waiting for DS ${DS_HOST}:1636"; sleep 3; done']
       containers:
         - name: am
           image: "${IMAGE_AM}"
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           imagePullPolicy: Never
           ports:
             - { name: http, containerPort: 8080 }

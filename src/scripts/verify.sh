@@ -18,7 +18,13 @@ KEEP=0; [ "${1:-}" = "--keep" ] && KEEP=1
 B="https://$FQDN"
 CURL=(curl -s -m 30 --cacert "$SECRETS_DIR/platform-ca.pem")
 FAILS=0
-check() { if [ "$1" = 0 ]; then ok "$2"; else fail "$2${3:+ — $3}"; FAILS=$((FAILS+1)); fi; }
+# check "description" "detail shown on failure" <condition command...>
+check() {
+  local desc="$1" detail="$2"; shift 2
+  if "$@"; then ok "$desc"; else fail "$desc${detail:+ — $detail}"; FAILS=$((FAILS+1)); fi
+}
+# shellcheck disable=SC2317  # called indirectly via check "$@"
+has() { [[ "$1" == *"$2"* ]]; }   # has STRING SUBSTRING
 # jget JSON EXPR  → python expression over d
 jget() { python3 -c 'import sys,json
 try: d=json.loads(sys.argv[1])
@@ -29,9 +35,9 @@ except Exception: print("")' "$1" "$2"; }
 # --- 1. health ---------------------------------------------------------------
 info "1. Health (via gateway $B)"
 for p in /platform/ /enduser/ /login/ /am/isAlive.jsp; do
-  c="$("${CURL[@]}" -o /dev/null -w '%{http_code}' "$B$p")"; check $([ "$c" = 200 ]; echo $?) "GET $p → $c"
+  c="$("${CURL[@]}" -o /dev/null -w '%{http_code}' "$B$p")"; check "GET $p → $c" "" [ "$c" = 200 ]
 done
-c="$("${CURL[@]}" "$B/openidm/info/ping")"; check $([[ "$c" == *ACTIVE_READY* ]]; echo $?) "IDM info/ping ACTIVE_READY"
+c="$("${CURL[@]}" "$B/openidm/info/ping")"; check "IDM info/ping ACTIVE_READY" "$c" has "$c" ACTIVE_READY
 
 # --- 2. amAdmin --------------------------------------------------------------
 info "2. amAdmin → AM → IDM"
@@ -40,7 +46,7 @@ auth() { # realm user pass → tokenId (callback-based journey for alpha, header
     -H 'Accept-API-Version: resource=2.0, protocol=1.0' "$B/am/json/realms/$1/authenticate"
 }
 AM_TOKEN="$(jget "$(auth root amadmin "$AM_ADMIN_PASSWORD")" 'd["tokenId"]')"
-check $([ -n "$AM_TOKEN" ]; echo $?) "amadmin AM login"
+check "amadmin AM login" "" [ -n "$AM_TOKEN" ]
 COOKIE="$("${CURL[@]}" -H 'Accept-API-Version: resource=1.0' "$B/am/json/serverinfo/*" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("cookieName","iPlanetDirectoryPro"))')"
 
 # OIDC forbids response_type=token with scope openid ("Response type is not supported"); IDM only needs fr:idm:*
@@ -51,9 +57,9 @@ implicit_token() { # realm_path client redirect session → access_token from th
   sed -n 's/.*[#&]access_token=\([^&]*\).*/\1/p' <<<"$loc"
 }
 ADMIN_AT="$(implicit_token "" idm-admin-ui "$B/platform/appAuthHelperRedirect.html" "$AM_TOKEN")"
-check $([ -n "$ADMIN_AT" ]; echo $?) "OAuth2 token for idm-admin-ui (root realm)"
+check "OAuth2 token for idm-admin-ui (root realm)" "" [ -n "$ADMIN_AT" ]
 r="$("${CURL[@]}" -H "Authorization: Bearer $ADMIN_AT" "$B/openidm/info/login")"
-check $([[ "$r" == *openidm-admin* ]]; echo $?) "IDM accepts amadmin token as openidm-admin" "$(head -c 200 <<<"$r")"
+check "IDM accepts amadmin token as openidm-admin" "$(head -c 200 <<<"$r")" has "$r" openidm-admin
 
 # --- 3. user in IDM → DS → AM ------------------------------------------------
 info "3. Create user in IDM → DS → AM alpha"
@@ -62,13 +68,13 @@ body="$(python3 -c 'import json,sys; print(json.dumps({"userName":sys.argv[1],"g
 r="$("${CURL[@]}" -X POST -H "Authorization: Bearer $ADMIN_AT" -H 'Content-Type: application/json' \
   "$B/openidm/managed/user?_action=create" -d "$body")"
 UID_="$(jget "$r" 'd["_id"]')"
-check $([ -n "$UID_" ]; echo $?) "IDM create managed/user $U" "$(head -c 200 <<<"$r")"
+check "IDM create managed/user $U" "$(head -c 200 <<<"$r")" [ -n "$UID_" ]
 dn="$(kn exec ds-0 -- /opt/opendj/bin/ldapsearch -h "$DS_HOST" -p 1636 -Z -X -D uid=admin -w "$DS_ROOT_PASSWORD" \
       -b ou=people,ou=identities "(uid=$U)" dn 2>/dev/null | sed -n 's/^dn: //p')"
-check $([ -n "$dn" ]; echo $?) "DS entry: ${dn:-missing}"
+check "DS entry: ${dn:-missing}" "" [ -n "$dn" ]
 # AM user id = fr-idm-uuid (store search attribute) = IDM _id
 r="$("${CURL[@]}" -H "$COOKIE: $AM_TOKEN" -H 'Accept-API-Version: resource=4.0'   "$B/am/json/realms/root/realms/alpha/users/$UID_?_fields=username")"
-check $([ "$(jget "$r" 'd["username"]')" = "$U" ]; echo $?) "AM realm alpha sees $U (users/$UID_)" "$(head -c 200 <<<"$r")"
+check "AM realm alpha sees $U (users/$UID_)" "$(head -c 200 <<<"$r")" [ "$(jget "$r" 'd["username"]')" = "$U" ]
 
 # --- 4. user login (journey) → end-user token → IDM --------------------------
 info "4. $U logs in (alpha PlatformLogin) → end-user-ui token → IDM"
@@ -76,7 +82,7 @@ url="$B/am/json/realms/root/realms/alpha/authenticate?authIndexType=service&auth
 H=(-H 'Content-Type: application/json' -H 'Accept-API-Version: resource=2.1, protocol=1.0')
 r="$("${CURL[@]}" -X POST "${H[@]}" "$url")"
 USER_TOKEN=""
-for i in 1 2 3 4 5; do
+for _ in 1 2 3 4 5; do
   USER_TOKEN="$(jget "$r" 'd.get("tokenId","")')"; [ -n "$USER_TOKEN" ] && break
   [ -n "$(jget "$r" 'd.get("authId","")')" ] || break
   r="$(python3 - "$r" "$U" "$PW" <<'PY' | "${CURL[@]}" -X POST "${H[@]}" --data-binary @- "$url"
@@ -91,18 +97,18 @@ print(json.dumps(d))
 PY
 )"
 done
-check $([ -n "$USER_TOKEN" ]; echo $?) "PlatformLogin journey for $U" "$(head -c 250 <<<"$r")"
+check "PlatformLogin journey for $U" "$(head -c 250 <<<"$r")" [ -n "$USER_TOKEN" ]
 USER_AT="$(implicit_token /realms/root/realms/alpha end-user-ui "$B/enduser/appAuthHelperRedirect.html" "$USER_TOKEN")"
-check $([ -n "$USER_AT" ]; echo $?) "OAuth2 token for end-user-ui (alpha)"
+check "OAuth2 token for end-user-ui (alpha)" "" [ -n "$USER_AT" ]
 r="$("${CURL[@]}" -H "Authorization: Bearer $USER_AT" "$B/openidm/info/login")"
-check $([ "$(jget "$r" 'd["authorization"]["component"]+"/"+d["authorization"]["id"]')" = "managed/user/$UID_" ]; echo $?) "IDM maps token to managed/user/$UID_" "$(head -c 200 <<<"$r")"
+check "IDM maps token to managed/user/$UID_" "$(head -c 200 <<<"$r")"   [ "$(jget "$r" 'd["authorization"]["component"]+"/"+d["authorization"]["id"]')" = "managed/user/$UID_" ]
 r="$("${CURL[@]}" -H "Authorization: Bearer $USER_AT" "$B/openidm/managed/user/$UID_?_fields=userName,mail")"
-check $([ "$(jget "$r" 'd["userName"]')" = "$U" ]; echo $?) "user reads own profile via IDM"
+check "user reads own profile via IDM" "$(head -c 200 <<<"$r")" [ "$(jget "$r" 'd["userName"]')" = "$U" ]
 
 # --- 5. cleanup --------------------------------------------------------------
 if [ "$KEEP" -eq 0 ] && [ -n "$UID_" ]; then
   c="$("${CURL[@]}" -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $ADMIN_AT" "$B/openidm/managed/user/$UID_")"
-  check $([ "$c" = 200 ]; echo $?) "deleted test user $U"
+  check "deleted test user $U" "HTTP $c" [ "$c" = 200 ]
 elif [ -n "$UID_" ]; then
   info "kept test user $U / $PW"
 fi
