@@ -1,0 +1,33 @@
+# --- Local working records (kept on disk, never committed) ---
+logs/
+progress/
+
+# --- Secrets / local settings ---
+.env
+*.env.local
+src/scripts/.secrets/
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.jceks
+
+# --- Vendor binaries (too large for git; see assets/apps/README.md) ---
+assets/apps/*.zip
+assets/apps/*.war
+assets/apps/*.jar
+
+# --- Build / render output ---
+build/
+out/
+.rendered/
+*.tmp
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store
