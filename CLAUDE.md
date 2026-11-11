@@ -15,7 +15,7 @@ and deployed to a local **Docker Desktop Kubernetes** cluster, fully automated.
 2. **Always keep a detailed activity log.** Log every meaningful action as it happens:
    what was done, why, the exact command or file touched, the result (including errors and
    what was learned). One entry per action, not one summary at the end.
-   Start a new session (`--new-session`) at the beginning of each working session.
+   Log files are **one per hour** (24 h clock, UTC+7) — the tool picks the file from the clock.
 3. **Design / structure first.** Changes to the layout below are made here in CLAUDE.md first,
    then in the files.
 4. Never edit or extract into `assets/apps/` — the zips are read-only inputs.
@@ -31,8 +31,7 @@ and deployed to a local **Docker Desktop Kubernetes** cluster, fully automated.
 | Purpose | WSL | Git Bash |
 | --- | --- | --- |
 | New plan → `progress/plan/NNN-yyyymmdd-hhmmss.md` | `/mnt/d/source_code/hobby/tools/_scripts/bin/new-plan.sh "Title"` | `/d/source_code/hobby/tools/_scripts/bin/new-plan.sh "Title"` |
-| Log entry → `logs/activity/yyyymmdd/yyyymmdd-hhmmss.log` | `/mnt/d/source_code/hobby/tools/_scripts/bin/log-activity.sh "msg"` | `/d/source_code/hobby/tools/_scripts/bin/log-activity.sh "msg"` |
-| New log session | `... log-activity.sh --new-session "msg"` | same |
+| Log entry → `logs/activity/yyyymmdd/yyyymmdd-HH.log` (one file per hour) | `/mnt/d/source_code/hobby/tools/_scripts/bin/log-activity.sh "msg"` | `/d/source_code/hobby/tools/_scripts/bin/log-activity.sh "msg"` |
 
 Timestamps are UTC+7. Log message style: `[AREA] action — detail — result`, e.g.
 `[DS] docker build ds:8.1.2 — FAILED: needs Java 25 — switched base to eclipse-temurin:25-jre`.
