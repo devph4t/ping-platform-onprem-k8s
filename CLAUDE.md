@@ -29,7 +29,7 @@ and deployed to a local **Docker Desktop Kubernetes** cluster, fully automated.
 ### Tools (shared toolbox: `D:\source_code\hobby\tools\_scripts`)
 
 | Purpose | Git Bash / WSL | PowerShell |
-|---|---|---|
+| --- | --- | --- |
 | New plan → `progress/plan/NNN-yyyymmdd-hhmmss.md` | `/d/source_code/hobby/tools/_scripts/bin/new-plan.sh "Title"` | `D:\source_code\hobby\tools\_scripts\bin\new-plan.ps1 "Title"` |
 | Log entry → `logs/activity/yyyymmdd/yyyymmdd-hhmmss.log` | `/d/source_code/hobby/tools/_scripts/bin/log-activity.sh "msg"` | `D:\source_code\hobby\tools\_scripts\bin\log-activity.ps1 "msg"` |
 | New log session | `... log-activity.sh --new-session "msg"` | `... log-activity.ps1 -NewSession "msg"` |
@@ -103,7 +103,7 @@ Single namespace `${NAMESPACE}` (default `ping`), single replica of each compone
 ## 3. Verified facts (from inspecting the zips — keep updated)
 
 | Item | Fact |
-|---|---|
+| --- | --- |
 | DS 8.1.2 | Needs **Java 25+** (`ERROR: ... valid Java 25` on Temurin 21). `setup` needs `--deploymentId` + `--deploymentIdPassword` (make with `dskeymgr create-deployment-id`). |
 | DS profiles | `am-config:6.5.0` (`amConfigAdminPassword`, baseDn `ou=am-config`), `am-cts:6.5.0` (`amCtsAdminPassword`, `tokenExpirationPolicy`), `am-identity-store:8.0.0` (`amIdentityStoreAdminPassword`, baseDn `ou=identities`), `idm-repo:8.1.0` (`domain` → `dc=openidm,dc=<domain>`) |
 | AM 8.1.1 | Zip holds `openam/AM-8.1.1.war` (+ Config-Upgrader, crypto tool, Fedlet). No Amster → configure via REST/configurator. Jakarta EE → Tomcat 10.1. Java version: _to verify_. |
