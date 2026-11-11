@@ -1,0 +1,30 @@
+# One-shot, idempotent platform configuration (AM install + platform settings).
+# deploy.sh deletes the previous Job and re-creates it on every deploy.
+# If the log contains AM_RESTART_REQUIRED, deploy.sh restarts statefulset/am.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: platform-config
+  namespace: ${NAMESPACE}
+  labels: { app: platform-config, app.kubernetes.io/part-of: ping-platform }
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels: { app: platform-config, app.kubernetes.io/part-of: ping-platform }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: configure
+          image: ${IMAGE_CONFIG}
+          imagePullPolicy: Never
+          env:
+            - { name: FQDN, value: "${FQDN}" }
+            - { name: COOKIE_DOMAIN, value: "${COOKIE_DOMAIN}" }
+            - { name: NAMESPACE, value: "${NAMESPACE}" }
+            - { name: DS_HOST, value: "${DS_HOST}" }
+          envFrom:
+            - secretRef: { name: platform-secrets }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { memory: 256Mi }

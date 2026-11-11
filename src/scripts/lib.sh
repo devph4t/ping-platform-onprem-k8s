@@ -56,6 +56,7 @@ load_env() {
   export IMAGE_AM="$IMAGE_PREFIX/am:$AM_VERSION"
   export IMAGE_IDM="$IMAGE_PREFIX/idm:$IDM_VERSION"
   export IMAGE_UI="$IMAGE_PREFIX/platform-ui:$UI_VERSION"
+  export IMAGE_CONFIG="$IMAGE_PREFIX/platform-config:${CONFIG_VERSION:-1}"
 }
 
 # --- Templates ---------------------------------------------------------------

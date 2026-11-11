@@ -1,0 +1,18 @@
+{
+  "_comment": "Platform end-user UI (/enduser). Public client, implied consent.",
+  "_realms": ["root", "alpha"],
+  "coreOAuth2ClientConfig": {
+    "clientType": "Public",
+    "scopes": ["openid", "fr:idm:*"],
+    "defaultScopes": [],
+    "redirectionUris": [
+      "https://${FQDN}/enduser/appAuthHelperRedirect.html",
+      "https://${FQDN}/enduser/sessionCheck.html"
+    ]
+  },
+  "advancedOAuth2ClientConfig": {
+    "grantTypes": ["implicit", "authorization_code"],
+    "tokenEndpointAuthMethod": "none",
+    "isConsentImplied": true
+  }
+}

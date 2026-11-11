@@ -1,0 +1,20 @@
+{
+  "_comment": "Platform admin UI (/platform) and IDM admin UI (/admin). Public client, implied consent.",
+  "_realms": ["root", "alpha"],
+  "coreOAuth2ClientConfig": {
+    "clientType": "Public",
+    "scopes": ["openid", "fr:idm:*"],
+    "defaultScopes": [],
+    "redirectionUris": [
+      "https://${FQDN}/platform/appAuthHelperRedirect.html",
+      "https://${FQDN}/platform/sessionCheck.html",
+      "https://${FQDN}/admin/appAuthHelperRedirect.html",
+      "https://${FQDN}/admin/sessionCheck.html"
+    ]
+  },
+  "advancedOAuth2ClientConfig": {
+    "grantTypes": ["implicit", "authorization_code"],
+    "tokenEndpointAuthMethod": "none",
+    "isConsentImplied": true
+  }
+}

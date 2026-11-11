@@ -1,0 +1,15 @@
+{
+  "_comment": "AM (IDM Provisioning service, journeys) calls IDM with tokens from this client. Must exist in both realms with identical config.",
+  "_realms": ["root", "alpha"],
+  "coreOAuth2ClientConfig": {
+    "clientType": "Confidential",
+    "userpassword": "${IDM_PROVISIONING_CLIENT_SECRET}",
+    "scopes": ["fr:idm:*"],
+    "defaultScopes": [],
+    "redirectionUris": []
+  },
+  "advancedOAuth2ClientConfig": {
+    "grantTypes": ["client_credentials"],
+    "tokenEndpointAuthMethod": "client_secret_basic"
+  }
+}

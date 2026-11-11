@@ -1,0 +1,15 @@
+{
+  "_comment": "IDM rsFilter uses this client to introspect AM tokens. Top-level realm only. Secret must match IDM rsFilter clientSecret.",
+  "_realms": ["root"],
+  "coreOAuth2ClientConfig": {
+    "clientType": "Confidential",
+    "userpassword": "${IDM_RS_CLIENT_SECRET}",
+    "scopes": ["am-introspect-all-tokens", "am-introspect-all-tokens-any-realm"],
+    "defaultScopes": [],
+    "redirectionUris": []
+  },
+  "advancedOAuth2ClientConfig": {
+    "grantTypes": ["client_credentials"],
+    "tokenEndpointAuthMethod": "client_secret_basic"
+  }
+}
