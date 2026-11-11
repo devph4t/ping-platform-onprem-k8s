@@ -4,6 +4,7 @@ progress/
 
 # --- Secrets / local settings ---
 .env
+.env.bak.*
 *.env.local
 src/scripts/.secrets/
 *.pem

@@ -109,7 +109,18 @@ Single namespace `${NAMESPACE}` (default `ping`), single replica of each compone
 | AM 8.1.1 | Zip holds `openam/AM-8.1.1.war` (+ Config-Upgrader, crypto tool, Fedlet). No Amster → configure via REST/configurator. Jakarta EE → Tomcat 10.1. Java version: _to verify_. |
 | IDM 8.1.2 | Ships `bin/Custom.Dockerfile` (base `gcr.io/forgerock-io/java-21`, user 11111, port 8080) and `bin/docker-entrypoint.sh`. Default `conf/repo.ds.json` = external DS `localhost:31389` startTLS, `uid=admin`. CORS filter class `org.eclipse.jetty.ee10.servlets.CrossOriginFilter`. Props in `resolver/boot.properties`. |
 | Platform UI 8.1.2 | `PlatformUI/www/{platform,enduser,login}` static apps + `variable_replacement.sh` (envsubst of `AM_URL`, `AM_ADMIN_URL`, `IDM_REST_URL`, `IDM_ADMIN_URL`, `ENDUSER_UI_URL`, `PLATFORM_ADMIN_URL`, `ADMIN_CLIENT_ID`, `ENDUSER_CLIENT_ID`, …). Needs `envsubst` in image. |
-| Host | Windows 11, Docker Desktop 29.7.2 (20 CPU, ~11.6 GB RAM to Docker), WSL Ubuntu-26.04, Git Bash. kubectl present; **helm/kind/minikube not installed**; Docker Desktop Kubernetes **not enabled yet**. |
+| Host | Windows 11, Docker Desktop 29.7.2 (20 CPU, ~11.6 GB RAM to Docker), WSL Ubuntu-26.04, Git Bash. kubectl present; **helm/kind/minikube not installed**. Git Bash has perl, openssl, envsubst, GnuWin32 make. |
+| Cluster | Docker Desktop Kubernetes **enabled**: context `docker-desktop`, kind-based node `desktop-control-plane` (k8s v1.36.1, containerd 2.3.1), default StorageClass `standard` (local-path). |
+| Images → cluster | Kind node does **not** share Docker's image store (`ErrImageNeverPull`). Load with `docker save IMG \| docker exec -i desktop-control-plane ctr -n k8s.io images import --digests -` (node container is hidden from `docker ps`, exec still works). Implemented as `load_image` in `src/scripts/lib.sh`; pods use `imagePullPolicy: Never`. |
+
+### Scripts (run from project root in Git Bash/WSL)
+
+| Script | Purpose |
+| --- | --- |
+| `bash src/scripts/init-env.sh [--force]` | create `.env` from `.env.example`, random 24-char alnum secrets |
+| `bash src/scripts/preflight.sh` | check tools, Docker RAM, cluster, kind node, zips, hosts entry (exit = #failures) |
+| `powershell -ExecutionPolicy Bypass -File src\scripts\add-hosts-entry.ps1 <fqdn>` | add `127.0.0.1 <fqdn>` to Windows hosts (UAC prompt) |
+| `src/scripts/lib.sh` | sourced helpers: `load_env`, `render`, `kc`/`kn`, `load_image`, `log` |
 
 ## 4. Open questions / decisions log
 
