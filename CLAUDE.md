@@ -57,7 +57,9 @@ on-premise/
 │   │   ├─ ds/                #   Dockerfile, entrypoint.sh (first-boot setup w/ profiles)
 │   │   ├─ am/                #   Dockerfile (Tomcat 10.1 + AM war as /am), setenv.sh
 │   │   ├─ idm/               #   Dockerfile, conf/ overrides (repo.ds, authentication, cors, ui)
-│   │   └─ platform-ui/       #   Dockerfile (nginx + www/ + variable_replacement.sh), nginx.conf
+│   │   ├─ platform-ui/       #   Dockerfile (nginx + www/ + variable_replacement.sh), nginx.conf
+│   │   └─ platform-config/   #   Dockerfile: alpine + curl/jq/envsubst + src/config + vendor sample journeys
+│   │                         #   (idm/platform/ = build-time IDM conf patch: rsFilter, shared identity store)
 │   ├─ k8s/                   # manifests as templates, ${VAR} filled from .env at deploy time
 │   │   ├─ 00-namespace.yaml
 │   │   ├─ 10-secrets.yaml
@@ -66,8 +68,8 @@ on-premise/
 │   │   ├─ 40-idm.yaml        #   Deployment + Service
 │   │   ├─ 50-platform-ui.yaml#   ONE Deployment + Service serving /platform /enduser /login
 │   │   ├─ 60-gateway.yaml    #   own nginx gateway: TLS + path routing, LoadBalancer :443 (no ingress controller)
-│   │   └─ jobs/              #   am-install, platform-config (OAuth2 clients, IDM link)
-│   ├─ config/                # REST payloads used by jobs (AM realms/clients/services)
+│   │   ├─ 70-platform-config-job.yaml # Job: AM install + platform config (runs configure.sh)
+│   ├─ config/                # configure.sh + am/configurator.params + am/clients/*.json (built into platform-config image)
 │   └─ scripts/               # entry points (bash; run from Git Bash or WSL)
 │       ├─ lib.sh             #   load .env, render templates, logging helper
 │       ├─ preflight.sh       #   check docker, k8s context, hosts entry, RAM
@@ -121,6 +123,12 @@ Single namespace `${NAMESPACE}` (default `ping`), single replica of each compone
 | Deploy | `deploy.sh` → all 5 Ready in ~79 s (DS 20 s, AM 20 s, IDM 21 s, UI 13 s, gateway 4 s); re-run is idempotent (~4 s, only changed objects roll). PVCs `data-ds-0` 5Gi, `home-am-0` 2Gi. Whole cluster ~3.5 GiB RAM with unconfigured AM. |
 | Gateway | Service LoadBalancer gets `172.18.0.5`; Docker Desktop publishes it on Windows `0.0.0.0:443/:80` (`com.docker.backend`) and `wslrelay` also binds `127.0.0.1:443/:80` — both reach the gateway (verified with openssl s_client). nginx needs `absolute_redirect off` (else `/am` → `https://…:8443/am/`). AM behind it sees `https://${FQDN}:443` (RemoteIpValve OK). |
 | curl on Windows | Git Bash curl uses Schannel → fails with rc 60/35 "revocation status unknown" on the local CA. Use `--ssl-no-revoke --cacert .secrets/platform-ca.pem`. In Git Bash also set `MSYS_NO_PATHCONV=1` when args start with `/` (it rewrote `/am` into `C:/Program Files/Git/am`). |
+| AM REST (8.1.1) | In-cluster calls use `http://am.<ns>.svc.cluster.local:8080/am` + headers `Host: ${FQDN}`, `X-Forwarded-Proto: https`, `X-Forwarded-Port: 443`. **Server-default and realm PUTs need `If-Match: *`** (else 400 "No new resource ID" / 500 empty). OAuth2Client `PUT` replaces whole sections → merge over `?_action=template` first (else default `responseTypes` wiped → `unsupported_response_type`). Node `PUT …/authenticationtrees/nodes/<_type._id>/<id>` = upsert. |
+| AM host names | AM rejects unknown hosts: 400 `FQDN "am.ping.svc.cluster.local" is not valid` → server-default advanced `com.sun.identity.server.fqdnMap[<host>]`; then 500 "No mapping organization found" → add host as **root realm alias**. Both done for `am`, `am.<ns>`, `am.<ns>.svc`, `am.<ns>.svc.cluster.local`. fqdnMap + CTS need AM restart. |
+| AM platform defaults | AM 8.1 default store "DS For ForgeRock IAM" already platform-ready (SCOPE_ONE, search attr `fr-idm-uuid`, `ou=people`, `fr-idm-managed-user-explicit`); new realm `alpha` gets a copy. No `externalLoginPageUrl` in 8.1 realm auth settings. OIDC rule: `response_type=token` + scope `openid` → "Response type is not supported" (use `fr:idm:*` only, `id_token token`, or code+PKCE). Token `sub` for amadmin = `(usr!amadmin)`. |
+| IDM platform | rsFilter (`src/docker/idm/platform/authentication.json`) — **subjects compared case-insensitively**: `(usr!amAdmin)` + `(usr!amadmin)` = "ambiguous staticUserMappings" → auth service fails → everything 401. With rsFilter, `X-OpenIDM-Username` header auth is gone (probes must not send it; anonymous `info/ping` works). managed/user → `fr-idm-uuid=<_id>,ou=people,ou=identities` (AM user id = IDM `_id`). |
+| Config Job | `ping-local/platform-config:1` runs `src/config/configure.sh` (steps 1–8b, idempotent; re-run ~5 s). Prints `AM_RESTART_REQUIRED` → `deploy.sh` restarts AM. Log copy: `.rendered/platform-config.log`. |
+| Verify | `bash src/scripts/verify.sh [--keep]` — 17 checks via `https://${FQDN}`: health, amadmin→idm-admin-ui token→IDM openidm-admin, IDM user→DS→AM alpha, PlatformLogin journey→end-user-ui token→IDM self, cleanup. |
 | Host | Windows 11, Docker Desktop 29.7.2 (20 CPU, ~11.6 GB RAM to Docker), WSL Ubuntu-26.04, Git Bash. kubectl present; **helm/kind/minikube not installed**. Git Bash has perl, openssl, envsubst, GnuWin32 make. |
 | Cluster | Docker Desktop Kubernetes **enabled**: context `docker-desktop`, kind-based node `desktop-control-plane` (k8s v1.36.1, containerd 2.3.1), default StorageClass `standard` (local-path). |
 | Images → cluster | Kind node does **not** share Docker's image store (`ErrImageNeverPull`). Load with `docker save IMG \| docker exec -i desktop-control-plane ctr -n k8s.io images import --digests -` (node container is hidden from `docker ps`, exec still works). Implemented as `load_image` in `src/scripts/lib.sh`; pods use `imagePullPolicy: Never`. |
@@ -140,11 +148,12 @@ Note for Claude: the Bash tool is Git Bash; to test in WSL write a script file a
 | `bash src/scripts/init-env.sh [--force]` | create `.env` from `.env.example`, random 24-char alnum secrets |
 | `bash src/scripts/preflight.sh` | check shell, tools, Docker RAM, cluster, kind node, zips, hosts entry (exit = #failures) |
 | `bash src/scripts/add-hosts-entry.sh [fqdn]` | add `127.0.0.1 <fqdn>` to **Windows** hosts via elevated powershell.exe (UAC prompt) |
-| `bash src/scripts/build-images.sh [--no-load] [ds] [am] [idm] [ui]` | build images from zips (`--build-context apps=assets/apps`) and load into kind node |
+| `bash src/scripts/build-images.sh [--no-load] [ds] [am] [idm] [ui] [config]` | build images from zips (`--build-context apps=assets/apps`; config also `config=src/config`) and load into kind node |
 | `bash src/scripts/ds-deployment-id.sh [--force]` | create DS deployment ID once (→ `.env`) and export CA → `.secrets/ds-ca.pem` |
 | `bash src/scripts/tls.sh [--renew] [--trust]` | local CA + gateway cert for ${FQDN} in `.secrets/`; `--trust` imports CA into Windows CurrentUser Root (dialog) |
 | `bash src/scripts/deploy.sh [--skip-wait]` | checks → namespace + Secrets (from .env/.secrets) → render + apply `src/k8s/*.yaml` in order, wait for rollouts |
 | `bash src/scripts/teardown.sh [--purge] [--yes]` | delete workloads (keep PVCs) or `--purge` the namespace (data lost) |
+| `bash src/scripts/verify.sh [--keep]` | end-to-end platform test through the gateway (exit = #failures) |
 | `src/scripts/lib.sh` | sourced helpers: `load_env`, `render`, `kc`/`kn`, `load_image`, `log`, `is_wsl`, `win_path`/`unix_path`, `winps` |
 
 ## 4. Open questions / decisions log
