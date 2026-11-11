@@ -14,13 +14,23 @@ check() { # check "description" command...
   if "$@" >/dev/null 2>&1; then ok "$d"; else fail "$d"; FAILS=$((FAILS+1)); fi
 }
 
+info "Shell"
+if grep -qi microsoft /proc/version 2>/dev/null && ! docker version >/dev/null 2>&1; then
+  fail "running in WSL without Docker Desktop integration ('bash' from PowerShell starts WSL, not Git Bash)"
+  echo "     fix A (recommended): run via Git Bash wrapper from PowerShell:"
+  echo "       .\\src\\scripts\\run.ps1 preflight"
+  echo "     fix B: Docker Desktop → Settings → Resources → WSL integration → enable your distro"
+  exit 1
+fi
+ok "shell: $(uname -s)"
+
 info "Tools"
 for c in docker kubectl perl openssl; do check "command: $c" command -v "$c"; done
 
 info "Docker"
 check "docker daemon reachable" docker info
-mem=$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
-mem_gb=$((mem / 1024 / 1024 / 1024))
+mem=$(docker info --format '{{.MemTotal}}' 2>/dev/null | tr -dc '0-9')
+mem_gb=$(( ${mem:-0} / 1024 / 1024 / 1024 ))
 if [ "$mem_gb" -ge 10 ]; then ok "docker memory ${mem_gb} GiB (>= 10)"
 else warn "docker memory ${mem_gb} GiB — platform needs ~9 GiB; raise it in Docker Desktop → Settings → Resources"; fi
 

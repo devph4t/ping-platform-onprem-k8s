@@ -113,10 +113,15 @@ Single namespace `${NAMESPACE}` (default `ping`), single replica of each compone
 | Cluster | Docker Desktop Kubernetes **enabled**: context `docker-desktop`, kind-based node `desktop-control-plane` (k8s v1.36.1, containerd 2.3.1), default StorageClass `standard` (local-path). |
 | Images → cluster | Kind node does **not** share Docker's image store (`ErrImageNeverPull`). Load with `docker save IMG \| docker exec -i desktop-control-plane ctr -n k8s.io images import --digests -` (node container is hidden from `docker ps`, exec still works). Implemented as `load_image` in `src/scripts/lib.sh`; pods use `imagePullPolicy: Never`. |
 
-### Scripts (run from project root in Git Bash/WSL)
+### Scripts (run from project root)
+
+**From PowerShell always use the wrapper** `.\src\scripts\run.ps1 <name> [args]` — plain `bash` in
+PowerShell starts **WSL**, which has no Docker integration/kubectl on this machine (verified).
+From Git Bash, call `bash src/scripts/<name>.sh` directly.
 
 | Script | Purpose |
 | --- | --- |
+| `.\src\scripts\run.ps1 <name> [args]` | PowerShell → runs `src/scripts/<name>.sh` with Git Bash, from project root |
 | `bash src/scripts/init-env.sh [--force]` | create `.env` from `.env.example`, random 24-char alnum secrets |
 | `bash src/scripts/preflight.sh` | check tools, Docker RAM, cluster, kind node, zips, hosts entry (exit = #failures) |
 | `powershell -ExecutionPolicy Bypass -File src\scripts\add-hosts-entry.ps1 <fqdn>` | add `127.0.0.1 <fqdn>` to Windows hosts (UAC prompt) |
