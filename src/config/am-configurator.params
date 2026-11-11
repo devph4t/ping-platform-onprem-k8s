@@ -1,0 +1,35 @@
+# AM initial install — POST form fields for http://<am>:8080/am/config/configurator
+# One KEY=VALUE per line; ${VAR} filled from .env by `render`; each line is sent as
+# curl --data-urlencode "KEY=VALUE". Verified against AM 8.1.1 on 2026-11-11
+# ("Configuration complete!" in ~17 s, isAlive 200, amadmin REST login OK).
+#
+# Notes:
+#  - AM 8 uses acceptLicense=true (old ACCEPT_LICENSES is ignored → "License terms not accepted").
+#  - DS requires TLS: *_SSL=SSL on 1636; AM truststore must contain the DS deployment CA.
+#  - DS host must be exactly ${DS_HOST} (name in the DS cert SAN).
+SERVER_URL=https://${FQDN}:443
+DEPLOYMENT_URI=/am
+BASE_DIR=/home/forgerock/openam
+locale=en_US
+PLATFORM_LOCALE=en_US
+AM_ENC_KEY=${AM_ENCRYPTION_KEY}
+ADMIN_PWD=${AM_ADMIN_PASSWORD}
+ADMIN_CONFIRM_PWD=${AM_ADMIN_PASSWORD}
+COOKIE_DOMAIN=${COOKIE_DOMAIN}
+acceptLicense=true
+DATA_STORE=dirServer
+DIRECTORY_SSL=SSL
+DIRECTORY_SERVER=${DS_HOST}
+DIRECTORY_PORT=1636
+DIRECTORY_ADMIN_PORT=4444
+DIRECTORY_JMX_PORT=1689
+ROOT_SUFFIX=ou=am-config
+DS_DIRMGRDN=uid=am-config,ou=admins,ou=am-config
+DS_DIRMGRPASSWD=${AM_CONFIG_ADMIN_PASSWORD}
+USERSTORE_TYPE=LDAPv3ForForgeRockIAM
+USERSTORE_SSL=SSL
+USERSTORE_HOST=${DS_HOST}
+USERSTORE_PORT=1636
+USERSTORE_SUFFIX=ou=identities
+USERSTORE_MGRDN=uid=am-identity-bind-account,ou=admins,ou=identities
+USERSTORE_PASSWD=${AM_IDENTITY_STORE_ADMIN_PASSWORD}
