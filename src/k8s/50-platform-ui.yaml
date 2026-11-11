@@ -1,0 +1,42 @@
+# Platform UI — one nginx serving /platform (admin), /enduser and /login.
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-ui
+  namespace: ${NAMESPACE}
+  labels: { app: platform-ui, app.kubernetes.io/part-of: ping-platform }
+spec:
+  selector: { app: platform-ui }
+  ports:
+    - { name: http, port: 8080 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-ui
+  namespace: ${NAMESPACE}
+  labels: { app: platform-ui, app.kubernetes.io/part-of: ping-platform }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: platform-ui }
+  template:
+    metadata:
+      labels: { app: platform-ui, app.kubernetes.io/part-of: ping-platform }
+    spec:
+      containers:
+        - name: platform-ui
+          image: ${IMAGE_UI}
+          imagePullPolicy: Never
+          env:
+            - { name: FQDN, value: "${FQDN}" }
+            - { name: ADMIN_CLIENT_ID, value: "${ADMIN_CLIENT_ID}" }
+            - { name: ENDUSER_CLIENT_ID, value: "${ENDUSER_CLIENT_ID}" }
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: ${UI_MEMORY} }
+            limits:   { memory: ${UI_MEMORY} }

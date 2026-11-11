@@ -1,0 +1,73 @@
+# PingIDM — stateless Deployment; repository is DS (StartTLS on 1389, trusts the DS CA).
+apiVersion: v1
+kind: Service
+metadata:
+  name: idm
+  namespace: ${NAMESPACE}
+  labels: { app: idm, app.kubernetes.io/part-of: ping-platform }
+spec:
+  selector: { app: idm }
+  ports:
+    - { name: http, port: 8080 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idm
+  namespace: ${NAMESPACE}
+  labels: { app: idm, app.kubernetes.io/part-of: ping-platform }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: idm }
+  template:
+    metadata:
+      labels: { app: idm, app.kubernetes.io/part-of: ping-platform }
+    spec:
+      securityContext: { runAsUser: 11111, runAsGroup: 0 }
+      initContainers:
+        - name: wait-for-ds
+          image: ${IMAGE_IDM}
+          imagePullPolicy: Never
+          command: [bash, -c, 'until (exec 3<>/dev/tcp/${DS_HOST}/1389) 2>/dev/null; do echo "waiting for DS ${DS_HOST}:1389"; sleep 3; done']
+      containers:
+        - name: idm
+          image: ${IMAGE_IDM}
+          imagePullPolicy: Never
+          env:
+            # IDM_PROP_a_b_c -> a.b.c in resolver/boot.properties (see src/docker/idm/entrypoint.sh)
+            - { name: IDM_PROP_openidm_repo_host, value: "${DS_HOST}" }
+            - { name: IDM_PROP_openidm_repo_port, value: "1389" }
+            - name: IDM_PROP_openidm_repo_password
+              valueFrom: { secretKeyRef: { name: platform-secrets, key: DS_ROOT_PASSWORD } }
+            - name: IDM_PROP_openidm_admin_password
+              valueFrom: { secretKeyRef: { name: platform-secrets, key: IDM_ADMIN_PASSWORD } }
+            # pods are transient: drop cluster node state on shutdown
+            - { name: IDM_PROP_openidm_cluster_remove_offline_node_state, value: "true" }
+          ports:
+            - { name: http, containerPort: 8080 }
+          startupProbe:
+            httpGet: &ping
+              path: /openidm/info/ping
+              port: http
+              httpHeaders:
+                - { name: X-OpenIDM-Username, value: anonymous }
+                - { name: X-OpenIDM-Password, value: anonymous }
+                - { name: X-OpenIDM-NoSession, value: "true" }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: *ping
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 250m, memory: ${IDM_MEMORY} }
+            limits:   { memory: ${IDM_MEMORY} }
+          volumeMounts:
+            - { name: trusted-ca, mountPath: /var/run/secrets/trusted-ca, readOnly: true }
+      volumes:
+        - name: trusted-ca
+          secret: { secretName: ds-ca }

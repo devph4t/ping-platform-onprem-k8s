@@ -1,0 +1,109 @@
+# Gateway — own nginx (instead of an ingress controller): TLS for ${FQDN} + path routing.
+# Service type LoadBalancer: Docker Desktop publishes it on localhost:443 / :80.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-nginx
+  namespace: ${NAMESPACE}
+  labels: { app: gateway, app.kubernetes.io/part-of: ping-platform }
+data:
+  default.conf: |
+    # :8080 (Service :80) — redirect to HTTPS; /healthz for probes
+    server {
+        listen 8080;
+        server_name _;
+        location = /healthz { access_log off; return 200 "ok\n"; }
+        location / { return 301 https://${FQDN}$request_uri; }
+    }
+
+    # :8443 (Service :443) — TLS, route by path
+    server {
+        listen 8443 ssl;
+        http2 on;
+        server_name ${FQDN};
+        absolute_redirect off;   # else nginx's own redirects leak the container port (:8443)
+
+        ssl_certificate     /etc/nginx/tls/tls.crt;
+        ssl_certificate_key /etc/nginx/tls/tls.key;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+
+        client_max_body_size      50m;
+        large_client_header_buffers 4 32k;   # AM cookies/JWTs can be large
+        proxy_buffer_size         64k;
+        proxy_buffers             8 64k;
+        proxy_busy_buffers_size   128k;
+        proxy_read_timeout        300s;
+        proxy_http_version        1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-Port  443;
+
+        # AM
+        location = /am { return 302 /am/; }
+        location /am/  { proxy_pass http://am.${NAMESPACE}.svc.cluster.local:8080; }
+
+        # IDM (REST, legacy admin UI, upload/export)
+        location /openidm/ { proxy_pass http://idm.${NAMESPACE}.svc.cluster.local:8080; }
+        location /admin/   { proxy_pass http://idm.${NAMESPACE}.svc.cluster.local:8080; }
+        location /upload/  { proxy_pass http://idm.${NAMESPACE}.svc.cluster.local:8080; }
+        location /export/  { proxy_pass http://idm.${NAMESPACE}.svc.cluster.local:8080; }
+
+        # Platform UI (/platform, /enduser, /login; / redirects to /platform/)
+        location / { proxy_pass http://platform-ui.${NAMESPACE}.svc.cluster.local:8080; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: ${NAMESPACE}
+  labels: { app: gateway, app.kubernetes.io/part-of: ping-platform }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: gateway }
+  template:
+    metadata:
+      labels: { app: gateway, app.kubernetes.io/part-of: ping-platform }
+      annotations:
+        # changes when the rendered nginx config changes → rollout restart
+        checksum/config: "${GATEWAY_CONFIG_CHECKSUM}"
+    spec:
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.29-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http,  containerPort: 8080 }
+            - { name: https, containerPort: 8443 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits:   { memory: 128Mi }
+          volumeMounts:
+            - { name: conf, mountPath: /etc/nginx/conf.d }
+            - { name: tls,  mountPath: /etc/nginx/tls, readOnly: true }
+      volumes:
+        - name: conf
+          configMap: { name: gateway-nginx }
+        - name: tls
+          secret: { secretName: gateway-tls }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: ${NAMESPACE}
+  labels: { app: gateway, app.kubernetes.io/part-of: ping-platform }
+spec:
+  type: LoadBalancer
+  selector: { app: gateway }
+  ports:
+    - { name: https, port: 443, targetPort: https }
+    - { name: http,  port: 80,  targetPort: http }

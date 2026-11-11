@@ -1,0 +1,73 @@
+# PingDS — single replica StatefulSet. Pod ds-0 is reachable as ${DS_HOST},
+# the name in its TLS certificate (setup --hostname). All binds require TLS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ds
+  namespace: ${NAMESPACE}
+  labels: { app: ds, app.kubernetes.io/part-of: ping-platform }
+spec:
+  clusterIP: None                 # headless: gives ds-0.ds.<ns>.svc.cluster.local
+  publishNotReadyAddresses: true
+  selector: { app: ds }
+  ports:
+    - { name: ldap,  port: 1389 }
+    - { name: ldaps, port: 1636 }
+    - { name: admin, port: 4444 }
+    - { name: http,  port: 8080 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ds
+  namespace: ${NAMESPACE}
+  labels: { app: ds, app.kubernetes.io/part-of: ping-platform }
+spec:
+  serviceName: ds
+  replicas: 1
+  selector:
+    matchLabels: { app: ds }
+  template:
+    metadata:
+      labels: { app: ds, app.kubernetes.io/part-of: ping-platform }
+    spec:
+      securityContext: { runAsUser: 11111, runAsGroup: 0, fsGroup: 0 }
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: ds
+          image: ${IMAGE_DS}
+          imagePullPolicy: Never      # loaded into the kind node by build-images.sh
+          env:
+            - { name: DS_HOSTNAME, value: "${DS_HOST}" }
+            - { name: DS_SERVER_ID, value: "ds-0" }
+            - { name: DS_IDM_REPO_DOMAIN, value: "${DS_IDM_REPO_DOMAIN}" }
+          envFrom:
+            - secretRef: { name: platform-secrets }
+          ports:
+            - { name: ldap,  containerPort: 1389 }
+            - { name: ldaps, containerPort: 1636 }
+            - { name: admin, containerPort: 4444 }
+            - { name: http,  containerPort: 8080 }
+          startupProbe:               # first boot runs setup (~15 s)
+            httpGet: { path: /alive, port: http }
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: { path: /alive, port: http }
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /healthy, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 250m, memory: ${DS_MEMORY} }
+            limits:   { memory: ${DS_MEMORY} }
+          volumeMounts:
+            - { name: data, mountPath: /opt/opendj/data }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ${STORAGE_CLASS}
+        resources:
+          requests: { storage: 5Gi }

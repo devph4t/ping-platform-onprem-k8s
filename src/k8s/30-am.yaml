@@ -1,0 +1,67 @@
+# PingAM — single replica StatefulSet; /home/forgerock (config + bootstrap) on a PVC.
+# Until the am-install job runs, /am/isAlive.jsp answers 302 (installer) — counts as ready.
+apiVersion: v1
+kind: Service
+metadata:
+  name: am
+  namespace: ${NAMESPACE}
+  labels: { app: am, app.kubernetes.io/part-of: ping-platform }
+spec:
+  selector: { app: am }
+  ports:
+    - { name: http, port: 8080 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: am
+  namespace: ${NAMESPACE}
+  labels: { app: am, app.kubernetes.io/part-of: ping-platform }
+spec:
+  serviceName: am
+  replicas: 1
+  selector:
+    matchLabels: { app: am }
+  template:
+    metadata:
+      labels: { app: am, app.kubernetes.io/part-of: ping-platform }
+    spec:
+      securityContext: { runAsUser: 11111, runAsGroup: 0, fsGroup: 0 }
+      initContainers:
+        - name: wait-for-ds
+          image: ${IMAGE_AM}
+          imagePullPolicy: Never
+          command: [bash, -c, 'until (exec 3<>/dev/tcp/${DS_HOST}/1636) 2>/dev/null; do echo "waiting for DS ${DS_HOST}:1636"; sleep 3; done']
+      containers:
+        - name: am
+          image: ${IMAGE_AM}
+          imagePullPolicy: Never
+          ports:
+            - { name: http, containerPort: 8080 }
+          startupProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /am/isAlive.jsp, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 250m, memory: ${AM_MEMORY} }
+            limits:   { memory: ${AM_MEMORY} }
+          volumeMounts:
+            - { name: home, mountPath: /home/forgerock }
+            - { name: trusted-ca, mountPath: /var/run/secrets/trusted-ca, readOnly: true }
+      volumes:
+        - name: trusted-ca
+          secret: { secretName: ds-ca }
+  volumeClaimTemplates:
+    - metadata:
+        name: home
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ${STORAGE_CLASS}
+        resources:
+          requests: { storage: 2Gi }

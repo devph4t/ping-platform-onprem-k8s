@@ -118,6 +118,9 @@ Single namespace `${NAMESPACE}` (default `ping`), single replica of each compone
 | Platform UI 8.1.2 | `PlatformUI/www/{platform,enduser,login}` static SPAs (relative asset paths) + `variable_replacement.sh` (envsubst of `$AM_URL` etc. in `*/js/*.js`, keeps pristine copies in `/tmp/*.tmpl`). 691 JS files. |
 | UI image | `ping-local/platform-ui:8.1.2.0813` (nginx-unprivileged 1.29-alpine, uid 101, port 8080, `.map` files dropped, 265 MB). Entrypoint derives all URLs from `FQDN` (`/am`, `/am/ui-admin`, `/openidm`, `/admin`, `/upload`, `/export`, `/enduser`, `/platform`), cloud-only `ENABLE_*` = false. nginx: SPA fallback per app, `/healthz`, `absolute_redirect off` (else redirects leak `http://…:8080`). **Design change:** one UI Deployment for all three apps (was three). ~19 MiB. |
 | Build | `bash src/scripts/build-images.sh` → all 4 images built (cached) + loaded into kind node in ~50 s. |
+| Deploy | `deploy.sh` → all 5 Ready in ~79 s (DS 20 s, AM 20 s, IDM 21 s, UI 13 s, gateway 4 s); re-run is idempotent (~4 s, only changed objects roll). PVCs `data-ds-0` 5Gi, `home-am-0` 2Gi. Whole cluster ~3.5 GiB RAM with unconfigured AM. |
+| Gateway | Service LoadBalancer gets `172.18.0.5`; Docker Desktop publishes it on Windows `0.0.0.0:443/:80` (`com.docker.backend`) and `wslrelay` also binds `127.0.0.1:443/:80` — both reach the gateway (verified with openssl s_client). nginx needs `absolute_redirect off` (else `/am` → `https://…:8443/am/`). AM behind it sees `https://${FQDN}:443` (RemoteIpValve OK). |
+| curl on Windows | Git Bash curl uses Schannel → fails with rc 60/35 "revocation status unknown" on the local CA. Use `--ssl-no-revoke --cacert .secrets/platform-ca.pem`. In Git Bash also set `MSYS_NO_PATHCONV=1` when args start with `/` (it rewrote `/am` into `C:/Program Files/Git/am`). |
 | Host | Windows 11, Docker Desktop 29.7.2 (20 CPU, ~11.6 GB RAM to Docker), WSL Ubuntu-26.04, Git Bash. kubectl present; **helm/kind/minikube not installed**. Git Bash has perl, openssl, envsubst, GnuWin32 make. |
 | Cluster | Docker Desktop Kubernetes **enabled**: context `docker-desktop`, kind-based node `desktop-control-plane` (k8s v1.36.1, containerd 2.3.1), default StorageClass `standard` (local-path). |
 | Images → cluster | Kind node does **not** share Docker's image store (`ErrImageNeverPull`). Load with `docker save IMG \| docker exec -i desktop-control-plane ctr -n k8s.io images import --digests -` (node container is hidden from `docker ps`, exec still works). Implemented as `load_image` in `src/scripts/lib.sh`; pods use `imagePullPolicy: Never`. |
@@ -139,6 +142,9 @@ Note for Claude: the Bash tool is Git Bash; to test in WSL write a script file a
 | `bash src/scripts/add-hosts-entry.sh [fqdn]` | add `127.0.0.1 <fqdn>` to **Windows** hosts via elevated powershell.exe (UAC prompt) |
 | `bash src/scripts/build-images.sh [--no-load] [ds] [am] [idm] [ui]` | build images from zips (`--build-context apps=assets/apps`) and load into kind node |
 | `bash src/scripts/ds-deployment-id.sh [--force]` | create DS deployment ID once (→ `.env`) and export CA → `.secrets/ds-ca.pem` |
+| `bash src/scripts/tls.sh [--renew] [--trust]` | local CA + gateway cert for ${FQDN} in `.secrets/`; `--trust` imports CA into Windows CurrentUser Root (dialog) |
+| `bash src/scripts/deploy.sh [--skip-wait]` | checks → namespace + Secrets (from .env/.secrets) → render + apply `src/k8s/*.yaml` in order, wait for rollouts |
+| `bash src/scripts/teardown.sh [--purge] [--yes]` | delete workloads (keep PVCs) or `--purge` the namespace (data lost) |
 | `src/scripts/lib.sh` | sourced helpers: `load_env`, `render`, `kc`/`kn`, `load_image`, `log`, `is_wsl`, `win_path`/`unix_path`, `winps` |
 
 ## 4. Open questions / decisions log
