@@ -78,7 +78,8 @@ on-premise/
 │       ├─ deploy.sh          #   render + kubectl apply in order, wait for ready
 │       ├─ verify.sh          #   smoke tests (health endpoints, admin login)
 │       └─ teardown.sh        #   delete namespace (+ optional PVCs)
-├─ docs/                      # runbook, architecture notes, troubleshooting
+├─ README.md                  # entry point: what, quick start, URLs, doc index
+├─ docs/                      # setup, running, daily-operations, troubleshooting, architecture, configuration
 ├─ progress/plan/             # plan files (created by new-plan tool)
 └─ logs/activity/             # activity logs (created by log-activity tool)
 ```
