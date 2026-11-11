@@ -79,6 +79,15 @@ load_image() {
 # --- Misc --------------------------------------------------------------------
 need() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"; }
 
+is_wsl() { grep -qi microsoft /proc/version 2>/dev/null; }
+
+# win_path UNIX_PATH -> C:\... ; unix_path 'C:\...' -> /mnt/c/... (WSL) or /c/... (Git Bash)
+win_path()  { if command -v wslpath >/dev/null 2>&1; then wslpath -w "$1"; else cygpath -w "$1"; fi; }
+unix_path() { if command -v wslpath >/dev/null 2>&1; then wslpath -u "$1"; else cygpath -u "$1"; fi; }
+
+# Run a PowerShell command on the Windows side and print stdout without CRs.
+winps() { powershell.exe -NoProfile -NonInteractive -Command "$1" | tr -d '\r'; }
+
 # Path to the Windows hosts file from Git Bash or WSL.
 hosts_file() {
   if [ -f /c/Windows/System32/drivers/etc/hosts ]; then echo /c/Windows/System32/drivers/etc/hosts

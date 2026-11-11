@@ -28,11 +28,11 @@ and deployed to a local **Docker Desktop Kubernetes** cluster, fully automated.
 
 ### Tools (shared toolbox: `D:\source_code\hobby\tools\_scripts`)
 
-| Purpose | Git Bash / WSL | PowerShell |
+| Purpose | WSL | Git Bash |
 | --- | --- | --- |
-| New plan → `progress/plan/NNN-yyyymmdd-hhmmss.md` | `/d/source_code/hobby/tools/_scripts/bin/new-plan.sh "Title"` | `D:\source_code\hobby\tools\_scripts\bin\new-plan.ps1 "Title"` |
-| Log entry → `logs/activity/yyyymmdd/yyyymmdd-hhmmss.log` | `/d/source_code/hobby/tools/_scripts/bin/log-activity.sh "msg"` | `D:\source_code\hobby\tools\_scripts\bin\log-activity.ps1 "msg"` |
-| New log session | `... log-activity.sh --new-session "msg"` | `... log-activity.ps1 -NewSession "msg"` |
+| New plan → `progress/plan/NNN-yyyymmdd-hhmmss.md` | `/mnt/d/source_code/hobby/tools/_scripts/bin/new-plan.sh "Title"` | `/d/source_code/hobby/tools/_scripts/bin/new-plan.sh "Title"` |
+| Log entry → `logs/activity/yyyymmdd/yyyymmdd-hhmmss.log` | `/mnt/d/source_code/hobby/tools/_scripts/bin/log-activity.sh "msg"` | `/d/source_code/hobby/tools/_scripts/bin/log-activity.sh "msg"` |
+| New log session | `... log-activity.sh --new-session "msg"` | same |
 
 Timestamps are UTC+7. Log message style: `[AREA] action — detail — result`, e.g.
 `[DS] docker build ds:8.1.2 — FAILED: needs Java 25 — switched base to eclipse-temurin:25-jre`.
@@ -113,19 +113,21 @@ Single namespace `${NAMESPACE}` (default `ping`), single replica of each compone
 | Cluster | Docker Desktop Kubernetes **enabled**: context `docker-desktop`, kind-based node `desktop-control-plane` (k8s v1.36.1, containerd 2.3.1), default StorageClass `standard` (local-path). |
 | Images → cluster | Kind node does **not** share Docker's image store (`ErrImageNeverPull`). Load with `docker save IMG \| docker exec -i desktop-control-plane ctr -n k8s.io images import --digests -` (node container is hidden from `docker ps`, exec still works). Implemented as `load_image` in `src/scripts/lib.sh`; pods use `imagePullPolicy: Never`. |
 
-### Scripts (run from project root)
+### Scripts (bash only — run in **WSL Ubuntu-26.04** from project root `/mnt/d/source_code/work/p1aic/on-premise`)
 
-**From PowerShell always use the wrapper** `.\src\scripts\run.ps1 <name> [args]` — plain `bash` in
-PowerShell starts **WSL**, which has no Docker integration/kubectl on this machine (verified).
-From Git Bash, call `bash src/scripts/<name>.sh` directly.
+All project scripts are `.sh`; **no `.ps1` scripts** in this project (user decision 2026-11-11).
+WSL needs one-time setup: Docker Desktop → Settings → Resources → WSL integration → enable
+`Ubuntu-26.04`, then `bash src/scripts/setup-wsl.sh`. Git Bash also works but is not the target.
+Note for Claude: the Bash tool is Git Bash; to test in WSL write a script file and run
+`MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-26.04 -- bash /mnt/...file.sh` (inline `bash -c` quoting breaks).
 
 | Script | Purpose |
 | --- | --- |
-| `.\src\scripts\run.ps1 <name> [args]` | PowerShell → runs `src/scripts/<name>.sh` with Git Bash, from project root |
+| `bash src/scripts/setup-wsl.sh` | one-time WSL setup: check docker integration, apt packages, install kubectl (sudo), link `~/.kube/config` → Windows kubeconfig, check API reachable |
 | `bash src/scripts/init-env.sh [--force]` | create `.env` from `.env.example`, random 24-char alnum secrets |
-| `bash src/scripts/preflight.sh` | check tools, Docker RAM, cluster, kind node, zips, hosts entry (exit = #failures) |
-| `powershell -ExecutionPolicy Bypass -File src\scripts\add-hosts-entry.ps1 <fqdn>` | add `127.0.0.1 <fqdn>` to Windows hosts (UAC prompt) |
-| `src/scripts/lib.sh` | sourced helpers: `load_env`, `render`, `kc`/`kn`, `load_image`, `log` |
+| `bash src/scripts/preflight.sh` | check shell, tools, Docker RAM, cluster, kind node, zips, hosts entry (exit = #failures) |
+| `bash src/scripts/add-hosts-entry.sh [fqdn]` | add `127.0.0.1 <fqdn>` to **Windows** hosts via elevated powershell.exe (UAC prompt) |
+| `src/scripts/lib.sh` | sourced helpers: `load_env`, `render`, `kc`/`kn`, `load_image`, `log`, `is_wsl`, `win_path`/`unix_path`, `winps` |
 
 ## 4. Open questions / decisions log
 

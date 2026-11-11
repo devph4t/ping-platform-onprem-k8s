@@ -15,14 +15,17 @@ check() { # check "description" command...
 }
 
 info "Shell"
-if grep -qi microsoft /proc/version 2>/dev/null && ! docker version >/dev/null 2>&1; then
-  fail "running in WSL without Docker Desktop integration ('bash' from PowerShell starts WSL, not Git Bash)"
-  echo "     fix A (recommended): run via Git Bash wrapper from PowerShell:"
-  echo "       .\\src\\scripts\\run.ps1 preflight"
-  echo "     fix B: Docker Desktop → Settings → Resources → WSL integration → enable your distro"
-  exit 1
+if is_wsl; then
+  ok "shell: WSL (${WSL_DISTRO_NAME:-unknown distro})"
+  if ! docker version >/dev/null 2>&1 || ! command -v kubectl >/dev/null 2>&1; then
+    fail "WSL is not set up (docker integration and/or kubectl missing)"
+    echo "     fix: Docker Desktop → Settings → Resources → WSL integration → enable this distro,"
+    echo "          then run: bash src/scripts/setup-wsl.sh"
+    exit 1
+  fi
+else
+  warn "shell: $(uname -s) — WSL is the supported shell (Git Bash usually works too)"
 fi
-ok "shell: $(uname -s)"
 
 info "Tools"
 for c in docker kubectl perl openssl; do check "command: $c" command -v "$c"; done
@@ -49,8 +52,7 @@ if grep -Eq "^[[:space:]]*127\.0\.0\.1[[:space:]]+([^#]*[[:space:]])?$FQDN([[:sp
   ok "hosts entry 127.0.0.1 $FQDN ($hf)"
 else
   fail "hosts entry missing: 127.0.0.1 $FQDN"
-  echo "     fix (PowerShell, approve the admin prompt):"
-  echo "       powershell -ExecutionPolicy Bypass -File src\\scripts\\add-hosts-entry.ps1 $FQDN"
+  echo "     fix (approve the UAC prompt on Windows):  bash src/scripts/add-hosts-entry.sh"
   FAILS=$((FAILS+1))
 fi
 
