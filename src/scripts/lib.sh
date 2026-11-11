@@ -87,12 +87,138 @@ need() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 
 is_wsl() { grep -qi microsoft /proc/version 2>/dev/null; }
 
+# diagnose_gateway : can this shell reach https://${FQDN} the way verify.sh does?
+# Checks layer by layer (proxy → DNS → TCP 443 → TLS/HTTP → same from Windows) and prints the
+# cause + fix for the first failing layer. Returns 0 if /platform/ answers 200.
+# (Added after a PC where every request returned "000": deploy was fine, the path to it wasn't.)
+diagnose_gateway() {
+  local ip code rc err subj
+  # `|| true`: no match must not abort callers running with `set -e -o pipefail`
+  local proxies; proxies="$(env | grep -iE '^(https?|all)_proxy=' | cut -d= -f1 | tr '\n' ' ' || true)"
+  if [ -n "$proxies" ]; then
+    warn "proxy variables set: ${proxies}— scripts bypass them for $FQDN (curl --noproxy)."
+    echo "     The browser uses the Windows proxy settings: add $FQDN to the proxy bypass list"
+    echo "     (Windows Settings → Network → Proxy → 'Don't use the proxy server for…') if pages don't load."
+  fi
+
+  # prefer IPv4 (the hosts entry is 127.0.0.1; "localhost" may resolve to ::1 first)
+  ip="$( { getent ahostsv4 "$FQDN" || getent hosts "$FQDN"; } 2>/dev/null | awk '{print $1; exit}' || true)"
+  if [ -z "$ip" ]; then
+    fail "DNS: $FQDN does not resolve in this shell"
+    echo "     fix: make hosts   (adds 127.0.0.1 $FQDN to the Windows hosts file)"
+    echo "     if Windows has it but WSL still can't resolve it, add it to WSL too:"
+    echo "       echo '127.0.0.1 $FQDN' | sudo tee -a /etc/hosts"
+    return 1
+  fi
+  ok "DNS: $FQDN → $ip"
+
+  if ! timeout 5 bash -c "exec 3<>/dev/tcp/$ip/443" 2>/dev/null; then
+    fail "TCP: nothing answers on $ip:443 from this shell"
+    echo "     check: kubectl --context $KUBE_CONTEXT -n $NAMESPACE get svc gateway   (must show EXTERNAL-IP + 443)"
+    echo "     check in PowerShell: netstat -ano | findstr \":443\"   — another program (VPN, IIS, security agent)"
+    echo "       may own port 443; Docker Desktop must be the one listening (com.docker.backend / wslrelay)"
+    return 1
+  fi
+  ok "TCP: $ip:443 open"
+
+  err="$(mktemp)"
+  code="$(curl -sS -m 15 --noproxy "$FQDN" --cacert "$SECRETS_DIR/platform-ca.pem" -o /dev/null \
+          -w '%{http_code}' "https://$FQDN/platform/" 2>"$err")"; rc=$?
+  if [ "$rc" -ne 0 ] || [ "$code" != 200 ]; then
+    fail "HTTPS: https://$FQDN/platform/ → curl exit $rc, HTTP ${code:-none}: $(head -c 200 "$err")"
+    subj="$(echo | timeout 5 openssl s_client -connect "$ip:443" -servername "$FQDN" 2>/dev/null \
+            | openssl x509 -noout -subject -issuer 2>/dev/null | tr '\n' ' ')"
+    echo "     certificate served on $ip:443: ${subj:-none}"
+    case "$rc" in
+      35|60) echo "     → not our gateway's certificate, or .secrets/platform-ca.pem doesn't match it:"
+             echo "       the gateway cert must be issued by 'ping-local dev CA'. Run: make certs deploy" ;;
+      28)    echo "     → timeout: something on 443 accepts connections but doesn't answer (proxy/security agent?)" ;;
+      *)     echo "     → gateway reachable but not healthy: make status; make logs-gateway" ;;
+    esac
+    rm -f "$err"; return 1
+  fi
+  rm -f "$err"
+  ok "HTTPS: https://$FQDN/platform/ → 200 (certificate trusted via .secrets/platform-ca.pem)"
+
+  if command -v powershell.exe >/dev/null 2>&1; then
+    diagnose_browser_path || true   # warnings only: WSL works, the browser may still be blocked
+  fi
+  return 0
+}
+
+# diagnose_browser_path : what does a *browser* on this Windows PC get for https://${FQDN}?
+# Uses Windows' own proxy resolution (IE/Edge settings incl. PAC) and trust store, like a browser.
+# Case seen on a company laptop: browser showed 404 — the company proxy answered, not our gateway
+# (our gateway never returns 404 for /, it redirects to /platform/).
+diagnose_browser_path() {
+  local proxy res
+  # shellcheck disable=SC2016  # PowerShell code, must stay literal
+  proxy="$(winps '$u=[Uri]"https://'"$FQDN"'/"; $p=[System.Net.WebRequest]::GetSystemWebProxy().GetProxy($u); if ($p -eq $u) {"DIRECT"} else {$p.AbsoluteUri}' 2>/dev/null)"
+  if [ "$proxy" = DIRECT ]; then
+    ok "Windows proxy settings: $FQDN is DIRECT (not proxied)"
+  else
+    fail "Windows proxy settings send $FQDN to the proxy ${proxy:-?} — the browser gets the proxy's page (e.g. 404), not ours"
+    echo "     fix: add $FQDN to the proxy bypass list — Settings → Network & internet → Proxy →"
+    echo "          'Use the proxy server except for addresses that start with': $FQDN"
+    echo "     if the proxy is set by company policy (PAC / greyed out): ask IT to bypass $FQDN,"
+    echo "     or start Edge/Chrome with --proxy-bypass-list=\"$FQDN\""
+  fi
+  local thumb; thumb="$(platform_ca_thumbprint)"
+  if win_root_has "$thumb"; then
+    ok "Windows trusts the local CA (thumbprint $thumb)"
+  else
+    fail "Windows does NOT trust the local CA ($thumb) — browsers show a certificate error"
+    echo "     fix: make trust   (click Yes in the Windows dialog), then restart the browser"
+  fi
+
+  # A request the way a browser makes it: Windows' own curl.exe (Schannel + Windows trust store)
+  # through the proxy Windows would use. (Windows PowerShell 5.1 Invoke-WebRequest is not a good
+  # stand-in: its old .NET TLS stack failed here while browsers worked.)
+  local via="--noproxy '*'"; [ "$proxy" != DIRECT ] && [ -n "$proxy" ] && via="-x '$proxy'"
+  # shellcheck disable=SC2016  # $env:SystemRoot is PowerShell
+  res="$(winps '& "$env:SystemRoot/System32/curl.exe" -s -I --ssl-no-revoke -m 15 '"$via"' -w "HTTP=%{http_code} rc=" "https://'"$FQDN"'/"; $LASTEXITCODE' 2>/dev/null \
+         | grep -iE '^(server:|HTTP=)' | tr -d '\r' | tr '\n' ' ')"
+  case "$res" in
+    *"HTTP=302"*nginx*|*nginx*"HTTP=302"*)
+      ok "browser-style request (Windows curl, Windows trust, Windows proxy setting): / → 302 from our gateway" ;;
+    *"rc=60"*|*"rc=35"*)
+      warn "browser-style request: TLS not trusted ($res) — make trust, then restart the browser"
+      # who answers anyway? (-k only for this diagnosis)
+      # shellcheck disable=SC2016
+      res="$(winps '& "$env:SystemRoot/System32/curl.exe" -s -k -I -m 15 '"$via"' -w "HTTP=%{http_code}" "https://'"$FQDN"'/"' 2>/dev/null \
+             | grep -iE '^(server:|HTTP=)' | tr -d '\r' | tr '\n' ' ')"
+      case "$res" in
+        *"HTTP=302"*nginx*|*nginx*"HTTP=302"*) echo "     (ignoring trust, our gateway answers: $res)" ;;
+        *) echo "     (ignoring trust, the answer is NOT our gateway: ${res:-none} — company proxy or another program on 443)" ;;
+      esac ;;
+    *)
+      warn "browser-style request: ${res:-no answer}"
+      echo "     → our gateway answers / with 302 → /platform/ (server: nginx). Anything else (e.g. 404 or another"
+      echo "       server name) comes from something else: the company proxy (see above) or another program on 443" ;;
+  esac
+}
+
 # win_path UNIX_PATH -> C:\... ; unix_path 'C:\...' -> /mnt/c/... (WSL) or /c/... (Git Bash)
 win_path()  { if command -v wslpath >/dev/null 2>&1; then wslpath -w "$1"; else cygpath -w "$1"; fi; }
 unix_path() { if command -v wslpath >/dev/null 2>&1; then wslpath -u "$1"; else cygpath -u "$1"; fi; }
 
 # Run a PowerShell command on the Windows side and print stdout without CRs.
 winps() { powershell.exe -NoProfile -NonInteractive -Command "$1" | tr -d '\r'; }
+
+# win_root_has SHA1_THUMBPRINT : is this CA in the Windows CurrentUser or LocalMachine Root store?
+# Uses forward slashes + an exact thumbprint compare: an earlier `Test-Path Cert:\...\Root\$thumb`
+# lost the backslash on the way to PowerShell, tested the store itself and always said True.
+win_root_has() {
+  local n
+  [[ "$1" =~ ^[0-9A-Fa-f]{40}$ ]] || return 1
+  n="$(winps "@(Get-ChildItem Cert:/CurrentUser/Root, Cert:/LocalMachine/Root | Where-Object Thumbprint -eq '$1').Count" 2>/dev/null)"
+  [ "${n:-0}" -gt 0 ] 2>/dev/null
+}
+
+# platform_ca_thumbprint : SHA1 thumbprint of .secrets/platform-ca.pem (as Windows shows it)
+platform_ca_thumbprint() {
+  openssl x509 -in "$SECRETS_DIR/platform-ca.pem" -noout -fingerprint -sha1 2>/dev/null | cut -d= -f2 | tr -d ':'
+}
 
 # Path to the Windows hosts file from Git Bash or WSL.
 hosts_file() {

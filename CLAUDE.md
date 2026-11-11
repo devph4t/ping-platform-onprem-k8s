@@ -150,7 +150,7 @@ Note for Claude: the Bash tool is Git Bash; to test in WSL write a script file a
 | `bash src/scripts/tls.sh [--renew] [--trust]` | local CA + gateway cert for ${FQDN} in `.secrets/`; `--trust` imports CA into Windows CurrentUser Root (dialog) |
 | `bash src/scripts/deploy.sh [--skip-wait]` | checks → namespace + Secrets (from .env/.secrets) → render + apply `src/k8s/*.yaml` in order, wait for rollouts |
 | `bash src/scripts/teardown.sh [--purge] [--yes]` | delete workloads (keep PVCs) or `--purge` the namespace (data lost) |
-| `bash src/scripts/verify.sh [--keep]` | end-to-end platform test through the gateway (exit = #failures) |
+| `bash src/scripts/verify.sh [--keep]` | step 0 = connectivity diagnosis (proxy → DNS → TCP 443 → TLS → Windows browser path); then end-to-end checks (exit = #failures). `make check-gateway` = diagnosis only |
 | `src/scripts/lib.sh` | sourced helpers: `load_env`, `render`, `kc`/`kn`, `load_image`, `log`, `is_wsl`, `win_path`/`unix_path`, `winps` |
 
 ## 4. Open questions / decisions log

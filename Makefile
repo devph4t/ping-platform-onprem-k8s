@@ -30,7 +30,7 @@ RES_gateway := deployment/gateway
 COMPONENTS  := ds am idm ui gateway
 
 .PHONY: help setup setup-wsl env hosts ds-id certs trust preflight build deploy verify up \
-        status urls config down purge reset lint docs-check log plan
+        status urls config down purge reset lint docs-check log plan check-gateway
 
 ##@ One-time setup (in this order — or just `make setup`)
 setup: setup-wsl env hosts build-ds ds-id certs trust preflight ## All one-time steps below, in order
@@ -66,8 +66,11 @@ build-%: ## Build one image: build-ds | build-am | build-idm | build-ui | build-
 deploy: ## Deploy + configure everything (idempotent; keeps data)
 	bash $(S)/deploy.sh
 
-verify: ## End-to-end test through https://$FQDN (17 checks)
+verify: ## End-to-end test through https://$FQDN (connectivity + 17 checks)
 	bash $(S)/verify.sh
+
+check-gateway: ## Diagnose the path to https://$FQDN only (proxy → DNS → TCP 443 → TLS → Windows side)
+	@bash -c 'source $(S)/lib.sh && load_env && diagnose_gateway'
 
 up: build deploy verify ## build + deploy + verify
 

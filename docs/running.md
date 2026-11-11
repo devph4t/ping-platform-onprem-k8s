@@ -85,7 +85,10 @@ bash src/scripts/verify.sh          # creates and then deletes a test user
 bash src/scripts/verify.sh --keep   # keep the test user and print its password
 ```
 
-It runs 17 checks through `https://ping-local.test.bbl`, the same way a browser would:
+It first checks **connectivity**: proxy → DNS → TCP 443 → TLS → the same request from
+Windows. If the gateway can't be reached, it stops there with the cause and the fix
+(`make check-gateway` runs only this part). Then it runs 17 checks through
+`https://ping-local.test.bbl`, the same way a browser would:
 
 1. **Health:** `/platform`, `/enduser`, `/login`, `/am/isAlive.jsp`, IDM `info/ping`.
 2. **amadmin:** AM login → OAuth2 token for `idm-admin-ui` → IDM accepts it as `openidm-admin`.
@@ -113,7 +116,8 @@ and all users gone.
 
 | Script | Purpose |
 | --- | --- |
-| `preflight.sh` | Is the machine ready? (tools, RAM, cluster, zips, hosts entry) |
+| `preflight.sh` | Is the machine ready? (tools, RAM, cluster, zips, hosts entry, proxy variables) |
+| `make check-gateway` | Why can't I reach `https://ping-local.test.bbl`? Proxy → DNS → TCP 443 → TLS → Windows browser path (proxy setting, CA trust, who answers) |
 | `setup-wsl.sh` | One-time WSL setup |
 | `init-env.sh [--force]` | Create `.env` with random secrets |
 | `ds-deployment-id.sh [--force]` | Create the DS deployment ID and export the DS CA |

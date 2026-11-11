@@ -16,7 +16,8 @@ set +e
 
 KEEP=0; [ "${1:-}" = "--keep" ] && KEEP=1
 B="https://$FQDN"
-CURL=(curl -s -m 30 --cacert "$SECRETS_DIR/platform-ca.pem")
+# --noproxy: never send our own hostname through an HTTP(S)_PROXY (company laptops)
+CURL=(curl -s -m 30 --noproxy "$FQDN" --cacert "$SECRETS_DIR/platform-ca.pem")
 FAILS=0
 # check "description" "detail shown on failure" <condition command...>
 check() {
@@ -31,6 +32,17 @@ try: d=json.loads(sys.argv[1])
 except Exception: d={}
 try: print(eval(sys.argv[2]))
 except Exception: print("")' "$1" "$2"; }
+
+# --- 0. connectivity ---------------------------------------------------------
+# If the gateway can't be reached at all, every later check would fail too ("000" everywhere);
+# stop here with the cause and the fix instead.
+info "0. Connectivity to $B"
+if ! diagnose_gateway; then
+  echo
+  fail "verify stopped: $B is not reachable from this shell (see the fix above; details: docs/troubleshooting.md)"
+  log "[VERIFY] verify.sh — gateway not reachable, stopped at connectivity check"
+  exit 1
+fi
 
 # --- 1. health ---------------------------------------------------------------
 info "1. Health (via gateway $B)"
@@ -47,7 +59,8 @@ auth() { # realm user pass → tokenId (callback-based journey for alpha, header
 }
 AM_TOKEN="$(jget "$(auth root amadmin "$AM_ADMIN_PASSWORD")" 'd["tokenId"]')"
 check "amadmin AM login" "" [ -n "$AM_TOKEN" ]
-COOKIE="$("${CURL[@]}" -H 'Accept-API-Version: resource=1.0' "$B/am/json/serverinfo/*" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("cookieName","iPlanetDirectoryPro"))')"
+COOKIE="$(jget "$("${CURL[@]}" -H 'Accept-API-Version: resource=1.0' "$B/am/json/serverinfo/*")" 'd.get("cookieName","")')"
+COOKIE="${COOKIE:-iPlanetDirectoryPro}"   # no traceback if AM doesn't answer
 
 # OIDC forbids response_type=token with scope openid ("Response type is not supported"); IDM only needs fr:idm:*
 implicit_token() { # realm_path client redirect session → access_token from the redirect fragment

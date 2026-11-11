@@ -38,6 +38,50 @@ Every entry below is something that actually happened while building this projec
 
 ## Browser and HTTPS
 
+### `make verify`: every check shows `→ 000`, followed by a Python traceback (`JSONDecodeError`)
+
+- **What it means:** `000` means curl never got an HTTP answer. The deploy can be perfectly
+  healthy; it's the path from your shell to `https://ping-local.test.bbl` that's broken.
+  This was seen on a company laptop.
+- **Diagnose:** run `make check-gateway`, or run `make verify` again. Both now test the path
+  layer by layer and stop at the first failure with its fix:
+
+  | Layer | Typical cause | Fix |
+  | --- | --- | --- |
+  | Proxy | `HTTPS_PROXY`/`HTTP_PROXY` set (company network) sends our hostname to the proxy | Scripts now use `curl --noproxy <FQDN>`. For the browser, add the FQDN to Windows proxy bypass (Settings → Network → Proxy) |
+  | DNS | no hosts entry on this PC, or WSL doesn't see it | `make hosts`; if WSL still can't resolve it: `echo '127.0.0.1 ping-local.test.bbl' \| sudo tee -a /etc/hosts` |
+  | TCP 443 | gateway Service missing, or another program owns port 443 (VPN, IIS, security agent) | `make status` (gateway must have `EXTERNAL-IP`); `netstat -ano \| findstr ":443"` in PowerShell |
+  | TLS | something else answers on 443, or `.secrets/platform-ca.pem` doesn't match the deployed cert | `make certs deploy` (the diagnosis shows which certificate is served) |
+
+- **Reproduced:** with `HTTPS_PROXY=http://10.255.255.1:3128`, the old curl call returns
+  exactly `000`. With `--noproxy`, `verify` passes.
+
+### Browser shows **404** for `https://ping-local.test.bbl` (no certificate warning)
+
+- **What it means:** our gateway **never** answers `/` with 404; it redirects to `/platform/`.
+  So something else answered the browser. On a company laptop that's usually the **company
+  proxy**: the browser sends the hostname to the proxy, the proxy can't resolve it and shows
+  its own 404 page. No certificate warning appears because company laptops trust the
+  proxy's certificate.
+- **Diagnose:** run `make check-gateway`. From WSL it asks Windows which proxy the browser
+  would use for this URL (including PAC scripts), checks that our CA is trusted, and requests
+  `/` the way a browser does. If trust is missing, it also shows who answers.
+- **Fix:** add `ping-local.test.bbl` to the proxy bypass list: Settings → Network & internet →
+  Proxy → "Use the proxy server except for addresses that start with". If the setting is
+  locked by company policy, ask IT, or start Edge/Chrome with
+  `--proxy-bypass-list="ping-local.test.bbl"`.
+- **Also check:** another program owning port 443 (`netstat -ano | findstr ":443"` in
+  PowerShell). Only Docker Desktop (`com.docker.backend`) and `wslrelay` should be there.
+
+### `tls.sh --trust` said "CA trusted by Windows" but the browser still warns
+
+- **Cause (fixed 2026-11-12):** the old success check lost a backslash on the way to
+  PowerShell. It tested whether the Root store *exists*, which is always true, so it
+  reported success even when the import didn't happen (dialog declined or closed).
+- **Fix:** run `make trust` again and click **Yes**. The check now compares the exact
+  thumbprint in `Cert:/CurrentUser/Root` and `Cert:/LocalMachine/Root`.
+  `make check-gateway` shows "Windows trusts the local CA" once it worked.
+
 ### Browser warns "connection not private"
 
 - **Cause:** the local CA isn't trusted.
@@ -138,10 +182,12 @@ Every entry below is something that actually happened while building this projec
 
 - **Cause:** CTS isn't external.
 - **Check:**
+
   ```bash
   kn exec ds-0 -- /opt/opendj/bin/ldapsearch -h ds-0.ds.ping.svc.cluster.local -p 1636 -Z -X \
     -D uid=admin -w "$DS_ROOT_PASSWORD" -b ou=famrecords,ou=openam-session,ou=tokens '(coreTokenType=SESSION)' dn
   ```
+
   If it finds no entries after a login, re-run `deploy.sh`.
 
 ## IDM
@@ -160,10 +206,12 @@ Look for these causes in `kn logs deploy/idm -c idm | grep -i 'Caused by'`:
 ### IDM REST returns `401` with a valid amadmin token
 
 1. Introspect the token from inside the IDM pod:
+
    ```bash
    kn exec deploy/idm -c idm -- curl -s -u "idm-resource-server:$IDM_RS_CLIENT_SECRET" \
      -d "token=$AT" http://am.ping.svc.cluster.local:8080/am/oauth2/introspect
    ```
+
    - An FQDN or "organization" error points to the AM fqdnMap / realm alias entries above.
    - `{"active":false}`: the token expired, or it came from another realm or client.
 2. The `sub` must match `staticUserMapping` in `src/docker/idm/platform/authentication.json`.
@@ -190,6 +238,7 @@ Look for these causes in `kn logs deploy/idm -c idm | grep -i 'Caused by'`:
 ```bash
 cat .rendered/platform-config.log          # or: kn logs job/platform-config
 ```
+
 The failing step and the HTTP error are printed with an `HTTP <code> <METHOD> <path>:`
 prefix. Fix the cause, then run `bash src/scripts/build-images.sh config && bash
 src/scripts/deploy.sh`.

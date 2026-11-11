@@ -56,6 +56,14 @@ else
   FAILS=$((FAILS+1))
 fi
 
+info "Proxy"
+proxies="$(env | grep -iE '^(https?|all)_proxy=' | cut -d= -f1 | tr '\n' ' ' || true)"
+if [ -z "$proxies" ]; then ok "no HTTP(S)_PROXY variables"
+else
+  warn "proxy variables set: ${proxies}— the scripts bypass them for $FQDN (curl --noproxy)"
+  echo "     browser: add $FQDN to the Windows proxy bypass list if pages don't load"
+fi
+
 info "Deploy prerequisites (warnings only — created by the scripts named)"
 pre() { if "$@" >/dev/null 2>&1; then ok "$DESC"; else warn "$DESC — run: $FIX"; fi; }
 DESC="DS deployment ID in .env";   FIX="bash src/scripts/ds-deployment-id.sh"; pre test -n "${DS_DEPLOYMENT_ID:-}"

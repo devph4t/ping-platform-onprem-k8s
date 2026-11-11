@@ -70,7 +70,7 @@ if [ "$TRUST" -eq 1 ]; then
   info "Importing CA into Windows CurrentUser\\Root — confirm the Windows security dialog"
   winps "certutil -user -addstore Root '$(win_path "$CA_PEM")'" | tail -3
   thumb="$(openssl x509 -in "$CA_PEM" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':')"
-  if winps "Test-Path Cert:\\CurrentUser\\Root\\$thumb" | grep -q True; then
+  if win_root_has "$thumb"; then
     ok "CA trusted by Windows (thumbprint $thumb). Restart the browser."
     log "[TLS] tls.sh --trust imported CA into Windows CurrentUser Root ($thumb)"
   else
