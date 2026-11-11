@@ -4,7 +4,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ds
-  namespace: ${NAMESPACE}
+  namespace: "${NAMESPACE}"
   labels: { app: ds, app.kubernetes.io/part-of: ping-platform }
 spec:
   clusterIP: None                 # headless: gives ds-0.ds.<ns>.svc.cluster.local
@@ -20,7 +20,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: ds
-  namespace: ${NAMESPACE}
+  namespace: "${NAMESPACE}"
   labels: { app: ds, app.kubernetes.io/part-of: ping-platform }
 spec:
   serviceName: ds
@@ -35,7 +35,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: ds
-          image: ${IMAGE_DS}
+          image: "${IMAGE_DS}"
           imagePullPolicy: Never      # loaded into the kind node by build-images.sh
           env:
             - { name: DS_HOSTNAME, value: "${DS_HOST}" }
@@ -59,8 +59,8 @@ spec:
             httpGet: { path: /healthy, port: http }
             periodSeconds: 10
           resources:
-            requests: { cpu: 250m, memory: ${DS_MEMORY} }
-            limits:   { memory: ${DS_MEMORY} }
+            requests: { cpu: 250m, memory: "${DS_MEMORY}" }
+            limits:   { memory: "${DS_MEMORY}" }
           volumeMounts:
             - { name: data, mountPath: /opt/opendj/data }
   volumeClaimTemplates:
@@ -68,6 +68,6 @@ spec:
         name: data
       spec:
         accessModes: [ReadWriteOnce]
-        storageClassName: ${STORAGE_CLASS}
+        storageClassName: "${STORAGE_CLASS}"
         resources:
           requests: { storage: 5Gi }

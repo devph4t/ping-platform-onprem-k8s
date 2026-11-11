@@ -3,7 +3,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: idm
-  namespace: ${NAMESPACE}
+  namespace: "${NAMESPACE}"
   labels: { app: idm, app.kubernetes.io/part-of: ping-platform }
 spec:
   selector: { app: idm }
@@ -14,7 +14,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: idm
-  namespace: ${NAMESPACE}
+  namespace: "${NAMESPACE}"
   labels: { app: idm, app.kubernetes.io/part-of: ping-platform }
 spec:
   replicas: 1
@@ -28,12 +28,12 @@ spec:
       securityContext: { runAsUser: 11111, runAsGroup: 0 }
       initContainers:
         - name: wait-for-ds
-          image: ${IMAGE_IDM}
+          image: "${IMAGE_IDM}"
           imagePullPolicy: Never
           command: [bash, -c, 'until (exec 3<>/dev/tcp/${DS_HOST}/1389) 2>/dev/null; do echo "waiting for DS ${DS_HOST}:1389"; sleep 3; done']
       containers:
         - name: idm
-          image: ${IMAGE_IDM}
+          image: "${IMAGE_IDM}"
           imagePullPolicy: Never
           env:
             # IDM_PROP_a_b_c -> a.b.c in resolver/boot.properties (see src/docker/idm/entrypoint.sh)
@@ -68,8 +68,8 @@ spec:
             tcpSocket: { port: http }
             periodSeconds: 30
           resources:
-            requests: { cpu: 250m, memory: ${IDM_MEMORY} }
-            limits:   { memory: ${IDM_MEMORY} }
+            requests: { cpu: 250m, memory: "${IDM_MEMORY}" }
+            limits:   { memory: "${IDM_MEMORY}" }
           volumeMounts:
             - { name: trusted-ca, mountPath: /var/run/secrets/trusted-ca, readOnly: true }
       volumes:

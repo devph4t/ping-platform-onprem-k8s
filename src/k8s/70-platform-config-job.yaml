@@ -5,7 +5,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: platform-config
-  namespace: ${NAMESPACE}
+  namespace: "${NAMESPACE}"
   labels: { app: platform-config, app.kubernetes.io/part-of: ping-platform }
 spec:
   backoffLimit: 1
@@ -16,7 +16,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: configure
-          image: ${IMAGE_CONFIG}
+          image: "${IMAGE_CONFIG}"
           imagePullPolicy: Never
           env:
             - { name: FQDN, value: "${FQDN}" }

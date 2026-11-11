@@ -4,7 +4,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: am
-  namespace: ${NAMESPACE}
+  namespace: "${NAMESPACE}"
   labels: { app: am, app.kubernetes.io/part-of: ping-platform }
 spec:
   selector: { app: am }
@@ -15,7 +15,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: am
-  namespace: ${NAMESPACE}
+  namespace: "${NAMESPACE}"
   labels: { app: am, app.kubernetes.io/part-of: ping-platform }
 spec:
   serviceName: am
@@ -29,12 +29,12 @@ spec:
       securityContext: { runAsUser: 11111, runAsGroup: 0, fsGroup: 0 }
       initContainers:
         - name: wait-for-ds
-          image: ${IMAGE_AM}
+          image: "${IMAGE_AM}"
           imagePullPolicy: Never
           command: [bash, -c, 'until (exec 3<>/dev/tcp/${DS_HOST}/1636) 2>/dev/null; do echo "waiting for DS ${DS_HOST}:1636"; sleep 3; done']
       containers:
         - name: am
-          image: ${IMAGE_AM}
+          image: "${IMAGE_AM}"
           imagePullPolicy: Never
           ports:
             - { name: http, containerPort: 8080 }
@@ -49,8 +49,8 @@ spec:
             tcpSocket: { port: http }
             periodSeconds: 30
           resources:
-            requests: { cpu: 250m, memory: ${AM_MEMORY} }
-            limits:   { memory: ${AM_MEMORY} }
+            requests: { cpu: 250m, memory: "${AM_MEMORY}" }
+            limits:   { memory: "${AM_MEMORY}" }
           volumeMounts:
             - { name: home, mountPath: /home/forgerock }
             - { name: trusted-ca, mountPath: /var/run/secrets/trusted-ca, readOnly: true }
@@ -62,6 +62,6 @@ spec:
         name: home
       spec:
         accessModes: [ReadWriteOnce]
-        storageClassName: ${STORAGE_CLASS}
+        storageClassName: "${STORAGE_CLASS}"
         resources:
           requests: { storage: 2Gi }
