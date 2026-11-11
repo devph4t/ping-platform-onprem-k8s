@@ -30,7 +30,7 @@ RES_gateway := deployment/gateway
 COMPONENTS  := ds am idm ui gateway
 
 .PHONY: help setup setup-wsl env hosts ds-id certs trust preflight build deploy verify up \
-        status urls config down purge reset lint docs-check log plan check-gateway diag
+        status urls config down purge reset lint docs-check log plan check-gateway diag trust-machine browser regateway
 
 ##@ One-time setup (in this order — or just `make setup`)
 setup: setup-wsl env hosts build-ds ds-id certs trust preflight ## All one-time steps below, in order
@@ -53,6 +53,12 @@ certs: ## Local CA + HTTPS certificate for $FQDN (.secrets/)
 trust: ## Trust the local CA in Windows (security dialog → Yes), then restart the browser
 	bash $(S)/tls.sh --trust
 
+trust-machine: ## Trust the local CA for the whole PC (UAC admin prompt) — if policy ignores `make trust`
+	bash $(S)/tls.sh --trust-machine
+
+browser: ## Open the platform in a dev browser profile (ignores cert errors, no proxy) — if policy blocks trust
+	bash $(S)/open-browser.sh
+
 ##@ Build · deploy · verify
 preflight: ## Check tools, Docker RAM, cluster, zips, hosts entry, prerequisites
 	bash $(S)/preflight.sh
@@ -71,6 +77,9 @@ verify: ## End-to-end test through https://$FQDN (connectivity + 17 checks)
 
 diag: ## Support bundle: pods, events, endpoints, logs, in-cluster checks → .rendered/diag-*.txt (no secrets)
 	@bash $(S)/diag.sh
+
+regateway: ## Recreate the gateway LoadBalancer Service (after freeing port 443/80); clears a stuck finalizer
+	@bash -c 'source $(S)/lib.sh && load_env && regateway'
 
 check-gateway: ## Diagnose the path to https://$FQDN only (proxy → DNS → TCP 443 → TLS → Windows side)
 	@bash -c 'source $(S)/lib.sh && load_env && diagnose_gateway'

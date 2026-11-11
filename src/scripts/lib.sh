@@ -112,6 +112,22 @@ diagnose_gateway() {
   fi
   ok "DNS: $FQDN → $ip"
 
+  # Docker Desktop publishes the gateway on localhost:443/80 only if the ports are free.
+  # Seen on another PC: EXTERNAL-IP <pending> + a different server answering on 443.
+  local lb
+  lb="$(kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" get svc gateway \
+        -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)"
+  if ! kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" get svc gateway >/dev/null 2>&1; then
+    fail "gateway Service not found in namespace $NAMESPACE — run: make deploy"
+    return 1
+  elif [ -z "$lb" ]; then
+    fail "gateway LoadBalancer has NO external IP (EXTERNAL-IP <pending>): Docker Desktop could not"
+    echo "     publish it — port 443 and/or 80 on this PC is already used by something else:"
+    port443_owners
+    return 1
+  fi
+  ok "gateway LoadBalancer published (external IP $lb)"
+
   if ! timeout 5 bash -c "exec 3<>/dev/tcp/$ip/443" 2>/dev/null; then
     fail "TCP: nothing answers on $ip:443 from this shell"
     echo "     check: kubectl --context $KUBE_CONTEXT -n $NAMESPACE get svc gateway   (must show EXTERNAL-IP + 443)"
@@ -129,9 +145,18 @@ diagnose_gateway() {
     subj="$(echo | timeout 5 openssl s_client -connect "$ip:443" -servername "$FQDN" 2>/dev/null \
             | openssl x509 -noout -subject -issuer 2>/dev/null | tr '\n' ' ')"
     echo "     certificate served on $ip:443: ${subj:-none}"
+    local our_ca served_issuer
+    our_ca="$(openssl x509 -in "$SECRETS_DIR/platform-ca.pem" -noout -subject 2>/dev/null | sed 's/^subject=//')"
+    served_issuer="$(sed -n 's/.*issuer=\(.*\)$/\1/p' <<<"$subj" | sed 's/ *$//')"
     case "$rc" in
-      35|60) echo "     → not our gateway's certificate, or .secrets/platform-ca.pem doesn't match it:"
-             echo "       the gateway cert must be issued by 'ping-local dev CA'. Run: make certs deploy" ;;
+      35|60)
+        if [ -n "$served_issuer" ] && [ "$served_issuer" != "$our_ca" ]; then
+          echo "     → ANOTHER server answers on 443 (issuer '$served_issuer', ours is '$our_ca')."
+          echo "       Something else on this PC owns port 443 — that is what your browser sees:"
+          port443_owners
+        else
+          echo "     → our CA issued it, but .secrets/platform-ca.pem doesn't verify it: make certs deploy"
+        fi ;;
       28)    echo "     → timeout: something on 443 accepts connections but doesn't answer (proxy/security agent?)" ;;
       *)     echo "     → gateway reachable but not healthy: make status; make logs-gateway" ;;
     esac
@@ -144,6 +169,59 @@ diagnose_gateway() {
     diagnose_browser_path || true   # warnings only: WSL works, the browser may still be blocked
   fi
   return 0
+}
+
+# port443_owners : who holds ports 443/80 on this PC? (other LoadBalancer Services in the cluster,
+# Docker containers publishing them, Windows processes listening) + how to free them.
+port443_owners() {
+  local other
+  other="$(kubectl --context "$KUBE_CONTEXT" get svc -A --no-headers 2>/dev/null \
+           | awk -v ns="$NAMESPACE" '$3=="LoadBalancer" && !($1==ns && $2=="gateway") && $6 ~ /(^|,)(443|80):/ {print "       k8s Service " $1 "/" $2 "  EXTERNAL-IP " $5 "  ports " $6}')"
+  # `if` instead of `[ ] && { }`: an empty result must not abort callers running with set -e
+  if [ -n "$other" ]; then echo "     • other LoadBalancer Services in this cluster using 443/80:"; echo "$other"; fi
+  local cont
+  cont="$(docker ps --format '{{.Names}}  {{.Ports}}' 2>/dev/null | grep -E ':(443|80)->' | sed 's/^/       container /' || true)"
+  if [ -n "$cont" ]; then echo "     • Docker containers publishing 443/80:"; echo "$cont"; fi
+  if command -v powershell.exe >/dev/null 2>&1; then
+    local win
+    # shellcheck disable=SC2016  # PowerShell code
+    win="$(winps 'Get-NetTCPConnection -State Listen -LocalPort 443,80 -ErrorAction SilentlyContinue | Sort-Object LocalPort -Unique | ForEach-Object { "       Windows {0}:{1}  pid {2}  {3}" -f $_.LocalAddress,$_.LocalPort,$_.OwningProcess,(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName }' 2>/dev/null)"
+    if [ -n "$win" ]; then echo "     • Windows processes listening on 443/80 (com.docker.backend/wslrelay = Docker Desktop):"; echo "$win"; fi
+  fi
+  echo "     fix: stop/remove the other one (e.g. kubectl delete ns <ns>, docker stop <container>,"
+  echo "          or stop the Windows service/app), then recreate our gateway Service so Docker"
+  echo "          Desktop publishes it:  make regateway"
+}
+
+# regateway : recreate the gateway LoadBalancer Service so Docker Desktop publishes it again.
+# A plain `kubectl delete svc` can hang forever on the load-balancer-cleanup finalizer when
+# Docker Desktop's LB controller doesn't respond (seen 2026-11-12) — clear it if needed.
+regateway() {
+  kn delete svc gateway --wait=false --ignore-not-found >/dev/null
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    kn get svc gateway >/dev/null 2>&1 || break
+    [ "$i" -eq 5 ] && kn patch svc gateway --type=merge -p '{"metadata":{"finalizers":null}}' >/dev/null 2>&1 \
+      && warn "gateway Service was stuck on its load-balancer-cleanup finalizer — cleared it"
+    sleep 2
+  done
+  render "$SRC_DIR/k8s/60-gateway.yaml" "$RENDER_DIR/k8s/60-gateway.yaml"
+  kn apply -f "$RENDER_DIR/k8s/60-gateway.yaml" >/dev/null
+  gateway_published 30
+}
+
+# gateway_published [SECONDS] : wait for the gateway LoadBalancer external IP; warn if it stays <pending>
+gateway_published() {
+  local i ip
+  for i in $(seq 1 "${1:-30}"); do
+    ip="$(kn get svc gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)"
+    [ -n "$ip" ] && { ok "gateway published on localhost:443/80 (LoadBalancer $ip)"; return 0; }
+    sleep 1
+  done
+  : "$i"
+  warn "gateway LoadBalancer is still <pending> — port 443/80 is probably used by something else on this PC"
+  echo "     run: make check-gateway   (shows who holds the port and how to free it)"
+  return 1
 }
 
 # diagnose_browser_path : what does a *browser* on this Windows PC get for https://${FQDN}?

@@ -4,17 +4,23 @@
 #   .secrets/gateway.crt / gateway.key           server cert for ${FQDN} (825 days), signed by the CA
 # Re-running keeps existing files unless the cert does not match ${FQDN} or --renew is given.
 #
-# Usage: bash src/scripts/tls.sh [--renew] [--trust]
-#   --trust  import the CA into the Windows *current user* Trusted Root store
-#            (Windows shows a confirmation dialog — click Yes). Browsers on Windows then trust it.
+# Usage: bash src/scripts/tls.sh [--renew] [--trust | --trust-machine]
+#   --trust          import the CA into the Windows *current user* Trusted Root store
+#                    (Windows shows a confirmation dialog — click Yes). Browsers then trust it.
+#   --trust-machine  import into the *local machine* Trusted Root store (UAC admin prompt) —
+#                    for PCs where policy ignores user-added roots.
+# If company policy blocks both: use `make browser` (dev browser profile, see open-browser.sh).
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 load_env
 need openssl
 
-RENEW=0; TRUST=0
+RENEW=0; TRUST=0; TRUST_MACHINE=0
 for a in "$@"; do
-  case "$a" in --renew) RENEW=1 ;; --trust) TRUST=1 ;; *) die "unknown argument: $a" ;; esac
+  case "$a" in
+    --renew) RENEW=1 ;; --trust) TRUST=1 ;; --trust-machine) TRUST_MACHINE=1 ;;
+    *) die "unknown argument: $a" ;;
+  esac
 done
 
 mkdir -p "$SECRETS_DIR"; chmod 700 "$SECRETS_DIR" 2>/dev/null || true
@@ -65,17 +71,52 @@ openssl verify -CAfile "$CA_PEM" "$CRT" >/dev/null || die "server cert does not 
 ok "server cert: $CRT ($(openssl x509 -in "$CRT" -noout -enddate))"
 
 # --- trust on Windows --------------------------------------------------------
-if [ "$TRUST" -eq 1 ]; then
+# Explain why Windows may refuse the CA and what still works (company laptops).
+explain_untrusted() {
+  local flags
+  # shellcheck disable=SC2016  # PowerShell code
+  flags="$(winps '(Get-ItemProperty "HKLM:/SOFTWARE/Policies/Microsoft/SystemCertificates/Root/ProtectedRoots" -ErrorAction SilentlyContinue).Flags' 2>/dev/null)"
+  if [ -n "$flags" ] && [ "$flags" != 0 ]; then
+    fail "company policy restricts trusted roots on this PC (ProtectedRoots Flags=$flags):"
+    echo "     root CAs added by a user are ignored — that's why certutil says 'added' but Windows doesn't trust it"
+  else
+    fail "Windows did not accept the CA into the trusted roots (dialog declined, or blocked by policy)"
+  fi
+  echo "     options:"
+  echo "       1. make trust-machine   — import for the whole PC (needs local admin; may also be blocked)"
+  echo "       2. make browser         — open Edge/Chrome in a separate dev profile that ignores the"
+  echo "                                 certificate for this test site (works even when policy blocks it)"
+  echo "       3. in your normal browser: Advanced → Continue to $FQDN (unsafe) — may break login pop-ups"
+}
+
+if [ "$TRUST" -eq 1 ] || [ "$TRUST_MACHINE" -eq 1 ]; then
   need powershell.exe
-  info "Importing CA into Windows CurrentUser\\Root — confirm the Windows security dialog"
-  winps "certutil -user -addstore Root '$(win_path "$CA_PEM")'" | tail -3
-  thumb="$(openssl x509 -in "$CA_PEM" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':')"
+  thumb="$(platform_ca_thumbprint)"
+  if win_root_has "$thumb"; then
+    ok "CA already trusted by Windows (thumbprint $thumb)"
+    exit 0
+  fi
+  if [ "$TRUST_MACHINE" -eq 1 ]; then
+    # Elevated import into LocalMachine\Root (UAC prompt), via a temp .ps1 (no quoting through bash).
+    WIN_TEMP="$(winps '[IO.Path]::GetTempPath()')"
+    PS1_UNIX="$(unix_path "$WIN_TEMP")/ping-trust-ca-$$.ps1"
+    printf 'Import-Certificate -FilePath "%s" -CertStoreLocation Cert:/LocalMachine/Root | Out-Null\n' \
+      "$(win_path "$CA_PEM")" > "$PS1_UNIX"
+    info "Importing CA into Windows LocalMachine Root — approve the administrator (UAC) prompt"
+    winps "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$(win_path "$PS1_UNIX")'" || true
+    rm -f "$PS1_UNIX"
+  else
+    info "Importing CA into Windows CurrentUser Root — confirm the Windows security dialog"
+    winps "certutil -user -addstore Root '$(win_path "$CA_PEM")'" | tail -3
+  fi
   if win_root_has "$thumb"; then
     ok "CA trusted by Windows (thumbprint $thumb). Restart the browser."
-    log "[TLS] tls.sh --trust imported CA into Windows CurrentUser Root ($thumb)"
+    log "[TLS] tls.sh imported CA into Windows Root ($([ "$TRUST_MACHINE" -eq 1 ] && echo LocalMachine || echo CurrentUser), $thumb)"
   else
-    die "CA not found in Windows store (dialog declined?)"
+    explain_untrusted
+    log "[TLS] tls.sh trust FAILED — CA not in Windows Root after import ($thumb)"
+    exit 1
   fi
 else
-  echo "     To trust it in Windows browsers: bash src/scripts/tls.sh --trust"
+  echo "     To trust it in Windows browsers: make trust  (or: make trust-machine / make browser)"
 fi

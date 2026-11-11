@@ -112,5 +112,6 @@ fi
 echo
 kn get pods,svc -o wide
 echo
+gateway_published 30 || true   # warns if Docker Desktop could not publish :443/:80 (port taken)
 ok "deployed to namespace $NAMESPACE — https://$FQDN/"
 log "[K8S] deploy.sh completed — namespace $NAMESPACE"

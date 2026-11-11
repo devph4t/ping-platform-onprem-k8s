@@ -114,6 +114,10 @@ bash src/scripts/tls.sh --trust       # local CA + HTTPS cert for FQDN; trusts t
 - **Platform CA:** signs the HTTPS certificate for `https://ping-local.test.bbl`.
   `--trust` imports it into your Windows *Current User → Trusted Root* store. Click
   **Yes** in the Windows security dialog, then **restart the browser**.
+- **Company laptop?** If policy blocks user-added root CAs, `make trust` says so. Then use
+  `make trust-machine` (admin), or `make browser` (a separate dev browser profile that
+  ignores the certificate). Also check that nothing else uses port 443:
+  `make check-gateway`. See [troubleshooting.md](troubleshooting.md).
 
 ## 8. Check
 

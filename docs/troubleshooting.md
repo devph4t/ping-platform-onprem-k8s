@@ -59,6 +59,46 @@ Every entry below is something that actually happened while building this projec
 - **Reproduced:** with `HTTPS_PROXY=http://10.255.255.1:3128`, the old curl call returns
   exactly `000`. With `--noproxy`, `verify` passes.
 
+### `service/gateway` stays `EXTERNAL-IP <pending>`, and the browser gets a different site
+
+- **Seen on:** a company laptop. `make diag` showed everything healthy inside the cluster,
+  but 127.0.0.1:443 served a certificate `CN=*.ping-local.test.bbl`, `issuer CN=selfsigned-ca`,
+  which isn't ours (ours is `issuer … ping-local dev CA`). The browser's 504 came from that
+  other server.
+- **Cause:** Docker Desktop publishes a LoadBalancer Service on localhost only if the port is
+  free. **Something else already holds 443 (or 80)**: another LoadBalancer in the same
+  cluster (an older ingress or ForgeOps install), a Docker container, or a Windows program.
+- **Diagnose:** run `make check-gateway`. It lists other LoadBalancer Services on 443/80,
+  containers publishing 443/80, and the Windows processes listening on 443/80.
+- **Fix:** remove or stop the other one (for example `kubectl delete ns <old-namespace>`,
+  `docker stop <container>`, or stop the Windows service), then run `make regateway`. That
+  recreates our gateway Service so Docker Desktop publishes it, and it handles the stuck
+  case below.
+
+### Deleting the gateway Service hangs (`Terminating`, finalizer `load-balancer-cleanup`)
+
+- **Cause:** Docker Desktop's load-balancer controller has to confirm the cleanup. After a
+  Docker Desktop restart it sometimes never does, and `kubectl delete svc gateway` waits
+  forever.
+- **Fix:** run `make regateway`. It deletes without waiting, clears the finalizer if the
+  Service is still there after about 10 s, re-applies the Service and waits until it's
+  published. Manual equivalent:
+  `kubectl -n ping patch svc gateway --type=merge -p '{"metadata":{"finalizers":null}}'`
+
+### `make trust` fails: certutil says "added to store" but Windows doesn't trust the CA
+
+- **Cause:** **company policy** (`ProtectedRoots`) makes Windows ignore root CAs added by a
+  user. `make trust` checks the policy and says so.
+- **Options, in order:**
+  1. `make trust-machine`: imports for the whole PC (UAC admin prompt). This needs local
+     admin and may also be blocked.
+  2. **`make browser`**: opens Edge or Chrome in a **separate dev profile**
+     (`%LOCALAPPDATA%\ping-local-dev-browser`) with `--ignore-certificate-errors` and
+     `--no-proxy-server`. This works even when policy blocks the CA. Your normal browser
+     profile isn't changed. Use that profile only for this test site.
+  3. In the normal browser: Advanced → "Continue to ping-local.test.bbl (unsafe)". Login
+     pop-ups and the service worker may still fail, so prefer option 2.
+
 ### Browser shows **504 Gateway Time-out** (nginx), but all pods are Running
 
 - **What it means:** the browser reached **our** gateway, but the gateway didn't get an
