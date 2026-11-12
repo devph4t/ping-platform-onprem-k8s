@@ -62,6 +62,7 @@ IDM 8.1 ships no native admin UI. IDM is managed through the Platform admin cons
 | [docs/dependencies.md](docs/dependencies.md) | check what you need: host software and versions, zips, images, network, ports |
 | [docs/setup.md](docs/setup.md) | prepare a machine (Docker Desktop, Kubernetes, WSL, hosts, certificates) |
 | [docs/setup-paths.md](docs/setup-paths.md) | choose **trusted** (normal browser) or **untrusted** (`make browser`) setup, and get through a company laptop |
+| [docs/commands.md](docs/commands.md) | look up any `make` command: setup, `.env` (create / show / change / recover), deploy, diagnose, reset |
 | [docs/running.md](docs/running.md) | build, deploy, verify, tear down; what each script does |
 | [docs/daily-operations.md](docs/daily-operations.md) | start/stop, check status, read logs, find passwords, manage users, apply changes |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | fix something that is broken (symptom → cause → fix) |

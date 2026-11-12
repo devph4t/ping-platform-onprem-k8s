@@ -7,6 +7,8 @@ cd /mnt/d/source_code/work/p1aic/on-premise
 alias kn='kubectl --context docker-desktop -n ping'   # namespace = NAMESPACE in .env
 ```
 
+All `make` commands are listed with examples in [commands.md](commands.md). To view or
+change settings, use `make env-show` and `make env-set KEY=… VALUE=…` (never `echo … > .env`).
 Most commands below also have a `make` shortcut: `make status`, `make logs-am`,
 `make restart-idm`, `make down`, `make deploy`, `make verify`, `make urls`. Run `make help`
 for the full list.

@@ -30,19 +30,13 @@ RES_gateway := deployment/gateway
 COMPONENTS  := ds am idm ui gateway
 
 .PHONY: help setup setup-wsl env hosts ds-id certs trust preflight build deploy verify up \
-        status urls config down purge reset lint docs-check log plan check-gateway diag trust-machine browser regateway recover-env
+        status urls config down purge reset lint docs-check log plan check-gateway diag trust-machine browser regateway recover-env env-show env-set env-check env-reset
 
-##@ One-time setup (in this order — or just `make setup`)
-setup: setup-wsl env hosts build-ds ds-id certs trust preflight ## All one-time steps below, in order
+##@ One-time setup — docs/setup-paths.md (trusted vs untrusted PC)
+setup: setup-wsl env hosts build-ds ds-id certs trust preflight ## Runs: setup-wsl env hosts build-ds ds-id certs trust preflight (Path B: run them one by one, skip trust)
 
 setup-wsl: ## WSL: packages, kubectl, ~/.kube/config → Windows kubeconfig (asks for sudo)
 	bash $(S)/setup-wsl.sh
-
-env: ## Create .env with random secrets (keeps an existing .env)
-	bash $(S)/init-env.sh
-
-recover-env: ## Rebuild a lost/overwritten .env from the cluster Secret (NS=ping) — keeps passwords matching the data
-	bash $(S)/recover-env.sh $(or $(NS),ping)
 
 hosts: ## Add 127.0.0.1 $FQDN to the Windows hosts file (UAC prompt)
 	bash $(S)/add-hosts-entry.sh
@@ -61,6 +55,28 @@ trust-machine: ## Trust the local CA for the whole PC (UAC admin prompt) — if 
 
 browser: ## Open the platform in a dev browser profile (ignores cert errors, no proxy) — if policy blocks trust
 	bash $(S)/open-browser.sh
+
+##@ Settings & secrets (.env) — never edit with `>`; use env-set
+env: ## Create .env with random passwords — NEW PC only (keeps an existing .env)
+	bash $(S)/init-env.sh
+
+env-show: ## Show all .env settings (secrets masked)
+	@bash $(S)/env-tool.sh show
+
+env-set: ## Change one value safely: make env-set KEY=GATEWAY_HTTP_PORT VALUE=3031
+	@test -n "$(KEY)" || { echo 'usage: make env-set KEY=NAME VALUE=value'; exit 1; }
+	@bash $(S)/env-tool.sh set "$(KEY)" "$(VALUE)"
+
+env-check: ## Is .env complete? (same check every script runs)
+	@bash $(S)/env-tool.sh check
+
+recover-env: ## Rebuild a lost/overwritten .env from the cluster Secret (NS=ping) — passwords match the data
+	bash $(S)/recover-env.sh $(or $(NS),ping)
+
+env-reset: ## NEW passwords (backs up .env). Only with a fresh platform: make purge first. Needs CONFIRM=yes
+	@test "$(CONFIRM)" = yes || { echo 'env-reset makes NEW passwords that do not match existing data.'; \
+	  echo 'Only for a fresh platform: make purge, then: make env-reset CONFIRM=yes && make ds-id && make deploy'; exit 1; }
+	bash $(S)/init-env.sh --force
 
 ##@ Build · deploy · verify
 preflight: ## Check tools, Docker RAM, cluster, zips, hosts entry, prerequisites
