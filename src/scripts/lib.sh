@@ -233,7 +233,7 @@ port443_owners() {
           System)
             echo "       $addr:$port  pid $pid System = Windows HTTP.sys (IIS / World Wide Web Publishing / other http.sys apps)"
             if [ "$port" = "$hp" ] && [ "$port" != 443 ]; then
-              echo "       → simplest: don't use port $hp — set GATEWAY_HTTP_PORT=8081 in .env (it only redirects to HTTPS)"
+              echo "       → simplest: don't use port $hp — set GATEWAY_HTTP_PORT=3031 (any free port) in .env (it only redirects to HTTPS)"
             fi ;;
           *) echo "       $addr:$port  pid $pid $pname → stop that program/service" ;;
         esac

@@ -95,7 +95,10 @@ Every entry below is something that actually happened while building this projec
     Service. It disappears with it; don't stop it by hand.
   - **Port 80 held by Windows `System` (pid 4)**, which is HTTP.sys (IIS / World Wide Web
     Publishing / other http.sys apps). Our port 80 only redirects to HTTPS, so move it:
-    add `GATEWAY_HTTP_PORT=8081` to `.env`, then run `make regateway`. HTTPS stays on 443.
+    set `GATEWAY_HTTP_PORT` to a free port (for example 3031) in `.env`, then run `make regateway`.
+    HTTPS stays on 443. Avoid 8081: the McAfee agent (`macmnsvc`) often listens there. To change
+    the value, edit the line rather than appending a second one:
+    `sed -i 's/^GATEWAY_HTTP_PORT=.*/GATEWAY_HTTP_PORT=3031/' .env`
 
 ### Deleting the gateway Service hangs (`Terminating`, finalizer `load-balancer-cleanup`)
 
