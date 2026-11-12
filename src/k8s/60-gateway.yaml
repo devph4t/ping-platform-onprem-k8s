@@ -111,5 +111,9 @@ spec:
   type: LoadBalancer
   selector: { app: gateway }
   ports:
-    - { name: https, port: 443, targetPort: https }
-    - { name: http,  port: 80,  targetPort: http }
+    - { name: https, port: 443, targetPort: https }   # fixed: AM's server URL is https://FQDN:443
+    # HTTP → HTTPS redirect only. GATEWAY_HTTP_PORT (default 80) can move it when port 80 is taken
+    # on the PC (e.g. Windows "System" pid 4 = HTTP.sys/IIS) — Docker Desktop won't publish otherwise.
+    - name: http
+      port: ${GATEWAY_HTTP_PORT}
+      targetPort: http

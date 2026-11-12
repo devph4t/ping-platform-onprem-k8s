@@ -53,6 +53,8 @@ load_env() {
   # In-cluster DS host name. AM/IDM must use exactly this name: the DS TLS cert is
   # issued for it (setup --hostname).
   export DS_HOST="${DS_HOST:-ds-0.ds.$NAMESPACE.svc.cluster.local}"
+  # gateway HTTP→HTTPS redirect port (older .env files don't have it)
+  export GATEWAY_HTTP_PORT="${GATEWAY_HTTP_PORT:-80}"
   export IMAGE_DS="$IMAGE_PREFIX/ds:$DS_VERSION"
   export IMAGE_AM="$IMAGE_PREFIX/am:$AM_VERSION"
   export IMAGE_IDM="$IMAGE_PREFIX/idm:$IDM_VERSION"
@@ -174,23 +176,49 @@ diagnose_gateway() {
 # port443_owners : who holds ports 443/80 on this PC? (other LoadBalancer Services in the cluster,
 # Docker containers publishing them, Windows processes listening) + how to free them.
 port443_owners() {
-  local other
-  other="$(kubectl --context "$KUBE_CONTEXT" get svc -A --no-headers 2>/dev/null \
-           | awk -v ns="$NAMESPACE" '$3=="LoadBalancer" && !($1==ns && $2=="gateway") && $6 ~ /(^|,)(443|80):/ {print "       k8s Service " $1 "/" $2 "  EXTERNAL-IP " $5 "  ports " $6}')"
+  local hp="${GATEWAY_HTTP_PORT:-80}" other cont win line ns name
   # `if` instead of `[ ] && { }`: an empty result must not abort callers running with set -e
-  if [ -n "$other" ]; then echo "     • other LoadBalancer Services in this cluster using 443/80:"; echo "$other"; fi
-  local cont
-  cont="$(docker ps --format '{{.Names}}  {{.Ports}}' 2>/dev/null | grep -E ':(443|80)->' | sed 's/^/       container /' || true)"
-  if [ -n "$cont" ]; then echo "     • Docker containers publishing 443/80:"; echo "$cont"; fi
-  if command -v powershell.exe >/dev/null 2>&1; then
-    local win
-    # shellcheck disable=SC2016  # PowerShell code
-    win="$(winps 'Get-NetTCPConnection -State Listen -LocalPort 443,80 -ErrorAction SilentlyContinue | Sort-Object LocalPort -Unique | ForEach-Object { "       Windows {0}:{1}  pid {2}  {3}" -f $_.LocalAddress,$_.LocalPort,$_.OwningProcess,(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName }' 2>/dev/null)"
-    if [ -n "$win" ]; then echo "     • Windows processes listening on 443/80 (com.docker.backend/wslrelay = Docker Desktop):"; echo "$win"; fi
+  other="$(kubectl --context "$KUBE_CONTEXT" get svc -A --no-headers 2>/dev/null \
+           | awk -v ns="$NAMESPACE" -v hp="$hp" '$3=="LoadBalancer" && !($1==ns && $2=="gateway") && $6 ~ ("(^|,)(443|" hp "):") {print $1 " " $2 " " $5 " " $6}' || true)"
+  if [ -n "$other" ]; then
+    echo "     • another LoadBalancer Service in this cluster holds 443/$hp (e.g. an older ingress install):"
+    while read -r ns name _ _; do
+      echo "       k8s Service $ns/$name"
+      echo "       → free the port without uninstalling it (reversible):"
+      echo "         kubectl -n $ns patch svc $name -p '{\"spec\":{\"type\":\"ClusterIP\"}}'"
+      echo "         (undo later: same command with \"LoadBalancer\")"
+    done <<<"$other"
   fi
-  echo "     fix: stop/remove the other one (e.g. kubectl delete ns <ns>, docker stop <container>,"
-  echo "          or stop the Windows service/app), then recreate our gateway Service so Docker"
-  echo "          Desktop publishes it:  make regateway"
+  cont="$(docker ps --format '{{.Names}}  {{.Ports}}' 2>/dev/null | grep -E ":(443|$hp)->" || true)"
+  if [ -n "$cont" ]; then
+    echo "     • Docker containers publishing 443/$hp:"
+    while read -r line; do
+      if [[ "$line" == kindccm-* ]]; then
+        echo "       ${line%%  *} — Docker Desktop's proxy for a k8s LoadBalancer (above); it goes away with it, don't stop it by hand"
+      else
+        echo "       $line → docker stop ${line%%  *}"
+      fi
+    done <<<"$cont"
+  fi
+  if command -v powershell.exe >/dev/null 2>&1; then
+    # shellcheck disable=SC2016  # PowerShell code
+    win="$(winps 'Get-NetTCPConnection -State Listen -LocalPort 443,'"$hp"' -ErrorAction SilentlyContinue | Sort-Object LocalPort,OwningProcess -Unique | ForEach-Object { "{0} {1} {2} {3}" -f $_.LocalPort,$_.OwningProcess,(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName,$_.LocalAddress }' 2>/dev/null)"
+    if [ -n "$win" ]; then
+      echo "     • Windows processes listening on 443/$hp:"
+      while read -r port pid pname addr; do
+        case "$pname" in
+          com.docker.backend|wslrelay) echo "       $addr:$port  $pname (Docker Desktop — fine)" ;;
+          System)
+            echo "       $addr:$port  pid $pid System = Windows HTTP.sys (IIS / World Wide Web Publishing / other http.sys apps)"
+            if [ "$port" = "$hp" ] && [ "$port" != 443 ]; then
+              echo "       → simplest: don't use port $hp — set GATEWAY_HTTP_PORT=8081 in .env (it only redirects to HTTPS)"
+            fi ;;
+          *) echo "       $addr:$port  pid $pid $pname → stop that program/service" ;;
+        esac
+      done <<<"$win"
+    fi
+  fi
+  echo "     then: make regateway   (recreates our gateway Service so Docker Desktop publishes it)"
 }
 
 # regateway : recreate the gateway LoadBalancer Service so Docker Desktop publishes it again.
@@ -215,11 +243,11 @@ gateway_published() {
   local i ip
   for i in $(seq 1 "${1:-30}"); do
     ip="$(kn get svc gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)"
-    [ -n "$ip" ] && { ok "gateway published on localhost:443/80 (LoadBalancer $ip)"; return 0; }
+    [ -n "$ip" ] && { ok "gateway published on localhost:443 + :${GATEWAY_HTTP_PORT:-80} (LoadBalancer $ip)"; return 0; }
     sleep 1
   done
   : "$i"
-  warn "gateway LoadBalancer is still <pending> — port 443/80 is probably used by something else on this PC"
+  warn "gateway LoadBalancer is still <pending> — port 443 or ${GATEWAY_HTTP_PORT:-80} is probably used by something else on this PC"
   echo "     run: make check-gateway   (shows who holds the port and how to free it)"
   return 1
 }

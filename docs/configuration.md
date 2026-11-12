@@ -13,6 +13,7 @@ git-ignored. Values must not contain spaces, quotes or `$`.
 | `KUBE_CONTEXT` | `docker-desktop` | kubectl context the scripts use |
 | `KIND_NODE_CONTAINER` | `desktop-control-plane` | Docker Desktop's hidden node; images are loaded into it |
 | `STORAGE_CLASS` | `standard` | StorageClass for the DS and AM PVCs |
+| `GATEWAY_HTTP_PORT` | `80` | Gateway HTTP port (redirects to HTTPS only). Set e.g. `8081` if port 80 is taken on the PC, for example by Windows `System` pid 4. HTTPS is always 443. Missing in older `.env` = 80 |
 | `DS_ZIP` `AM_ZIP` `IDM_ZIP` `UI_ZIP` | file names | Vendor zips in `assets/apps/` |
 | `IMAGE_PREFIX` | `ping-local` | Image name prefix |
 | `DS_VERSION` `AM_VERSION` `IDM_VERSION` `UI_VERSION` | 8.1.x | Image tags |

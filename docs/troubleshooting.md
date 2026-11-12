@@ -74,6 +74,16 @@ Every entry below is something that actually happened while building this projec
   `docker stop <container>`, or stop the Windows service), then run `make regateway`. That
   recreates our gateway Service so Docker Desktop publishes it, and it handles the stuck
   case below.
+- **Seen in practice:**
+  - **`ingress-nginx/ingress-nginx-controller`** (an older ingress install) held 443. Its
+    default page is **"503 Service Temporarily Unavailable"** (nginx). The non-destructive,
+    reversible fix is to make its Service ClusterIP:
+    `kubectl -n ingress-nginx patch svc ingress-nginx-controller -p '{"spec":{"type":"ClusterIP"}}'`.
+    The `kindccm-*` container that also publishes 443 is Docker Desktop's proxy for that
+    Service. It disappears with it; don't stop it by hand.
+  - **Port 80 held by Windows `System` (pid 4)**, which is HTTP.sys (IIS / World Wide Web
+    Publishing / other http.sys apps). Our port 80 only redirects to HTTPS, so move it:
+    add `GATEWAY_HTTP_PORT=8081` to `.env`, then run `make regateway`. HTTPS stays on 443.
 
 ### Deleting the gateway Service hangs (`Terminating`, finalizer `load-balancer-cleanup`)
 
