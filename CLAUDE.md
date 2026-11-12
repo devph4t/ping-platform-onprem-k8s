@@ -50,7 +50,7 @@ on-premise/
 ├─ CLAUDE.md                  # this file: rules, design, facts
 ├─ README.md                  # entry point: what, quick start, URLs, doc index
 ├─ Makefile                   # `make help` — short names for src/scripts/* (setup, build, deploy, verify, …)
-├─ docs/                      # dependencies, setup, running, daily-operations, troubleshooting, architecture,
+├─ docs/                      # dependencies, setup, setup-paths, running, daily-operations, troubleshooting, architecture,
 │                             #   configuration — diagrams are Mermaid (check: `make docs-check`)
 ├─ .env.example               # all settings + placeholder secrets (committed)
 ├─ .env                       # real values (git-ignored)  FQDN=ping-local.test.bbl

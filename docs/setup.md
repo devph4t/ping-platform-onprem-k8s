@@ -6,6 +6,10 @@ Do these steps once per machine. Afterwards, `bash src/scripts/preflight.sh` sho
 Tested on Windows 11 with Docker Desktop 29.7 (Kubernetes v1.36) and WSL Ubuntu 26.04.
 Exact versions are in [dependencies.md](dependencies.md).
 
+> **Will Windows trust the local CA on this PC?** If not (company laptop / policy), or you're not
+> sure, read [setup-paths.md](setup-paths.md) first. It has the full step list for both cases
+> and the company-laptop fixes.
+
 ```mermaid
 flowchart LR
   a["1-2 · Docker Desktop<br/>+ Kubernetes"] --> b["3 · WSL integration<br/>make setup-wsl"]
