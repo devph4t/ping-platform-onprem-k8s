@@ -117,6 +117,7 @@ and all users gone.
 | Script | Purpose |
 | --- | --- |
 | `preflight.sh` | Is the machine ready? (tools, RAM, cluster, zips, hosts entry, proxy variables) |
+| `make recover-env` (`recover-env.sh [namespace]`) | Rebuild a lost or overwritten `.env` from `.env.example` + the cluster Secret `platform-secrets` |
 | `make trust-machine` (`tls.sh --trust-machine`) | Trust the local CA for the whole PC (UAC); for PCs where policy ignores user-added roots |
 | `make browser` (`open-browser.sh [--print] [path]`) | Open the platform in a dev Edge/Chrome profile that ignores certificate errors and uses no proxy (when policy blocks trusting the CA) |
 | `make regateway` | Recreate the gateway LoadBalancer Service after freeing port 443/80 (clears a stuck finalizer) |

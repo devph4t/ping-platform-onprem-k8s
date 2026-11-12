@@ -153,6 +153,7 @@ Note for Claude: the Bash tool is Git Bash; to test in WSL write a script file a
 | `bash src/scripts/verify.sh [--keep]` | step 0 = connectivity diagnosis (proxy → DNS → TCP 443 → TLS → Windows browser path); then end-to-end checks (exit = #failures). `make check-gateway` = diagnosis only |
 | `bash src/scripts/diag.sh` / `make diag` | support bundle (no secrets) → `.rendered/diag-*.txt`; in-cluster checks from the gateway pod |
 | `bash src/scripts/open-browser.sh [--print]` / `make browser` | dev Edge/Chrome profile, `--ignore-certificate-errors --no-proxy-server` (company PCs where policy blocks CA trust) |
+| `bash src/scripts/recover-env.sh [ns]` / `make recover-env` | rebuild lost `.env` = `.env.example` + Secret `platform-secrets` (all secrets + DS_DEPLOYMENT_ID); keeps extra keys, backs up old |
 | `make trust-machine` / `make regateway` | CA into LocalMachine Root (UAC) / recreate gateway LB Service (clears stuck finalizer) |
 | `src/scripts/lib.sh` | sourced helpers: `load_env`, `render`, `kc`/`kn`, `load_image`, `log`, `is_wsl`, `win_path`/`unix_path`, `winps` |
 

@@ -15,6 +15,18 @@ Every entry below is something that actually happened while building this projec
 
 ## Shell and machine
 
+### `NAMESPACE: unbound variable`, or ".env not found / incomplete"
+
+- **Cause:** `.env` was overwritten or deleted. A common way is `echo 'KEY=value' > .env`:
+  a single `>` **replaces** the file. Use `>>` to append.
+- **Fix, if the platform was already deployed on this PC:** run `make recover-env`. It
+  rebuilds `.env` from `.env.example` plus the cluster Secret `platform-secrets`, which holds
+  all passwords and the DS deployment ID, so the recovered values match the existing data.
+  It keeps extra keys from a broken `.env` (for example `GATEWAY_HTTP_PORT`) and backs that
+  file up as `.env.bak.<time>`. Re-apply any non-secret setting you had changed (for
+  example `FQDN`). For another namespace: `make recover-env NS=<name>`.
+- **Brand-new setup (nothing deployed):** run `make env`.
+
 ### `The command 'docker' could not be found in this WSL 2 distro`
 
 - **Cause:** Docker Desktop's WSL integration is off for your distro. In PowerShell,

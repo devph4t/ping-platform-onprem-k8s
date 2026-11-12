@@ -39,8 +39,25 @@ log() {
 }
 
 # --- .env --------------------------------------------------------------------
+ENV_REQUIRED=(FQDN COOKIE_DOMAIN NAMESPACE KUBE_CONTEXT KIND_NODE_CONTAINER STORAGE_CLASS
+  DS_ZIP AM_ZIP IDM_ZIP UI_ZIP IMAGE_PREFIX DS_VERSION AM_VERSION IDM_VERSION UI_VERSION
+  DS_ROOT_PASSWORD DS_DEPLOYMENT_ID_PASSWORD AM_CONFIG_ADMIN_PASSWORD AM_CTS_ADMIN_PASSWORD
+  AM_IDENTITY_STORE_ADMIN_PASSWORD AM_ADMIN_PASSWORD AM_ENCRYPTION_KEY IDM_ADMIN_PASSWORD
+  IDM_PROVISIONING_CLIENT_SECRET IDM_RS_CLIENT_SECRET ADMIN_CLIENT_ID ENDUSER_CLIENT_ID
+  DS_MEMORY AM_MEMORY IDM_MEMORY UI_MEMORY)
+
+# How to get a working .env back (a deployed cluster still holds all secrets).
+env_fix_hint() {
+  echo "     fix: if the platform was deployed on this PC:  make recover-env"
+  echo "          (rebuilds .env from .env.example + the cluster Secret platform-secrets)"
+  echo "          brand-new setup:                       make env"
+  echo "     tip: to ADD a line use >>  (echo 'KEY=value' >> .env) — a single > overwrites the file"
+}
+
 load_env() {
-  [ -f "$ENV_FILE" ] || die ".env not found ($ENV_FILE). Run: bash src/scripts/init-env.sh"
+  if [ ! -f "$ENV_FILE" ]; then
+    fail ".env not found ($ENV_FILE)"; env_fix_hint; exit 1
+  fi
   # Strip CR (file may be edited on Windows), then export every KEY=VALUE.
   local tmp; tmp="$(mktemp)"
   tr -d '\r' < "$ENV_FILE" > "$tmp"
@@ -49,6 +66,11 @@ load_env() {
   rm -f "$tmp"
   if grep -q '=CHANGE_ME$' <(tr -d '\r' < "$ENV_FILE"); then
     die ".env still has CHANGE_ME values. Run: bash src/scripts/init-env.sh"
+  fi
+  local k missing=()
+  for k in "${ENV_REQUIRED[@]}"; do [ -n "${!k:-}" ] || missing+=("$k"); done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    fail ".env is incomplete — missing: ${missing[*]}"; env_fix_hint; exit 1
   fi
   # In-cluster DS host name. AM/IDM must use exactly this name: the DS TLS cert is
   # issued for it (setup --hostname).

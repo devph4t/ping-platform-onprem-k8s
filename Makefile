@@ -30,7 +30,7 @@ RES_gateway := deployment/gateway
 COMPONENTS  := ds am idm ui gateway
 
 .PHONY: help setup setup-wsl env hosts ds-id certs trust preflight build deploy verify up \
-        status urls config down purge reset lint docs-check log plan check-gateway diag trust-machine browser regateway
+        status urls config down purge reset lint docs-check log plan check-gateway diag trust-machine browser regateway recover-env
 
 ##@ One-time setup (in this order — or just `make setup`)
 setup: setup-wsl env hosts build-ds ds-id certs trust preflight ## All one-time steps below, in order
@@ -40,6 +40,9 @@ setup-wsl: ## WSL: packages, kubectl, ~/.kube/config → Windows kubeconfig (ask
 
 env: ## Create .env with random secrets (keeps an existing .env)
 	bash $(S)/init-env.sh
+
+recover-env: ## Rebuild a lost/overwritten .env from the cluster Secret (NS=ping) — keeps passwords matching the data
+	bash $(S)/recover-env.sh $(or $(NS),ping)
 
 hosts: ## Add 127.0.0.1 $FQDN to the Windows hosts file (UAC prompt)
 	bash $(S)/add-hosts-entry.sh
